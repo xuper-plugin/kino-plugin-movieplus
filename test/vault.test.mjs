@@ -60,6 +60,23 @@ test("ensureRecipe: challenge → kino.identity → POST /secrets → caches and
   assert.ok(body.challenge && body.deviceKey && body.signature);
 });
 
+test("ensureRecipe: sends the gate `token` when kino.identity returns one (token-author live-membership path)", async () => {
+  identityAnswer = { id: "p".repeat(32), deviceKey: "dk", signature: "sig", author: "E04E-EA25-1A34-290E", codeHash: "c0de", token: "GATE.TOKEN.SIG" };
+  await ensureRecipe();
+  const secretCall = fetchCalls.find((c) => c.url && c.url.includes("/secrets/"));
+  const body = JSON.parse(secretCall.body);
+  assert.equal(body.token, "GATE.TOKEN.SIG", "the raw gate token is forwarded to the vault");
+  assert.equal(body.id, "p".repeat(32), "and the pseudonym still goes too (binding + fallback)");
+});
+
+test("ensureRecipe: omits `token` when kino.identity returns none (universal path unchanged)", async () => {
+  // default identityAnswer has no token
+  await ensureRecipe();
+  const secretCall = fetchCalls.find((c) => c.url && c.url.includes("/secrets/"));
+  const body = JSON.parse(secretCall.body);
+  assert.ok(!("token" in body), "no token field when there is no token");
+});
+
 test("ensureRecipe: a cached fresh recipe short-circuits with no network", async () => {
   await ensureRecipe();
   fetchCalls = [];

@@ -75,7 +75,7 @@ export async function ensureRecipe() {
     try { k.log && k.log("Movie+ vault: kino.identity threw code=" + ((e && e.code) || "?") + " msg=" + ((e && e.message) || e)); } catch (_) {}
     throw e;
   }
-  try { k.log && k.log("Movie+ vault: identity id=" + (idp && idp.id ? "yes" : "no") + " deviceKey=" + (idp && idp.deviceKey ? "yes" : "no") + " sig=" + (idp && idp.signature ? "yes" : "no") + " author=" + (idp && idp.author) + " codeHash=" + (idp && idp.codeHash ? "yes" : "no")); } catch (_) {}
+  try { k.log && k.log("Movie+ vault: identity id=" + (idp && idp.id ? "yes" : "no") + " deviceKey=" + (idp && idp.deviceKey ? "yes" : "no") + " sig=" + (idp && idp.signature ? "yes" : "no") + " author=" + (idp && idp.author) + " codeHash=" + (idp && idp.codeHash ? "yes" : "no") + " token=" + (idp && idp.token ? "yes" : "no")); } catch (_) {}
   if (!idp || !idp.id || !idp.deviceKey || !idp.signature) throw k.error("unavailable", "kino.identity did not sign the vault challenge");
   const body = {
     pluginId: PLUGIN_ID,
@@ -86,6 +86,12 @@ export async function ensureRecipe() {
     author: idp.author,
     codeHash: idp.codeHash,
   };
+  // Movie+ is signed with a token author (E04E), so kino.identity also returns the raw gate token. When present, send it:
+  // the vault verifies it with the bot's key (like /session), resolves the real Telegram id and checks group membership
+  // LIVE — so it works for ANY real member, not only the ~1.5% who ever did a token /session (the vault's member table
+  // cannot enumerate a 34k-member group). The backend treats `token` as optional and falls back to the pseudonym
+  // reverse-map when it is absent, so this stays compatible with the universal (token-less) path.
+  if (idp.token) body.token = idp.token;
   const resp = await k.fetch(VAULT_BASE + `/secrets/${OWNER}/${REPO}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });

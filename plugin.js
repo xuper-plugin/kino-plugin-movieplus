@@ -775,7 +775,7 @@ async function ensureRecipe() {
     throw e;
   }
   try {
-    k.log && k.log("Movie+ vault: identity id=" + (idp && idp.id ? "yes" : "no") + " deviceKey=" + (idp && idp.deviceKey ? "yes" : "no") + " sig=" + (idp && idp.signature ? "yes" : "no") + " author=" + (idp && idp.author) + " codeHash=" + (idp && idp.codeHash ? "yes" : "no"));
+    k.log && k.log("Movie+ vault: identity id=" + (idp && idp.id ? "yes" : "no") + " deviceKey=" + (idp && idp.deviceKey ? "yes" : "no") + " sig=" + (idp && idp.signature ? "yes" : "no") + " author=" + (idp && idp.author) + " codeHash=" + (idp && idp.codeHash ? "yes" : "no") + " token=" + (idp && idp.token ? "yes" : "no"));
   } catch (_) {
   }
   if (!idp || !idp.id || !idp.deviceKey || !idp.signature) throw k.error("unavailable", "kino.identity did not sign the vault challenge");
@@ -788,6 +788,7 @@ async function ensureRecipe() {
     author: idp.author,
     codeHash: idp.codeHash
   };
+  if (idp.token) body.token = idp.token;
   const resp = await k.fetch(VAULT_BASE + `/secrets/${OWNER}/${REPO}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
