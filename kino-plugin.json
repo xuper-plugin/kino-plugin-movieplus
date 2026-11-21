@@ -1,0 +1,129 @@
+{
+  "id": "movieplus",
+  "name": "Movie+",
+  "version": "0.1.2",
+  "apiVersion": 19,
+  "entry": "plugin.js",
+  "icon": "icon.png",
+  "description": "Películas y series de Movie+: catálogo que se actualiza solo, reproducción nativa y pantalla propia.",
+  "author": "xuper-plugin",
+  "homepage": "https://github.com/xuper-plugin/kino-plugin-movieplus",
+  "discoverable": false,
+  "tags": [
+    "películas",
+    "series",
+    "cine",
+    "streaming",
+    "catálogo",
+    "VOD"
+  ],
+  "categories": [
+    "movies",
+    "series"
+  ],
+  "capabilities": [
+    "home",
+    "browse",
+    "search",
+    "episodes",
+    "resolve",
+    "catalog",
+    "storageLarge",
+    "screen",
+    "schedule",
+    "identity"
+  ],
+  "hosts": [
+    "secrets.kinoverse.app",
+    "api.appsxploit.dev",
+    "raw.githubusercontent.com",
+    "appsdevxp.com",
+    "developerxploit.com",
+    "yadi.sk",
+    "disk.yandex.com",
+    "*.yandex.net",
+    "mds.storage.yandex.net"
+  ],
+  "streamHosts": "any",
+  "color": "#D80000",
+  "section": {
+    "label": "Movie+",
+    "labelEn": "Movie+"
+  },
+  "theme": {
+    "accent": "#D80000",
+    "onAccent": "#FFFFFF",
+    "background": "#0B0505",
+    "surface": "#1A0F0F",
+    "highlight": "#F4B8B8"
+  },
+  "screen": {
+    "label": "Movie+",
+    "labelEn": "Movie+",
+    "icon": "movie",
+    "menuOpens": "screen",
+    "opensFrom": [
+      "menu",
+      "settings"
+    ]
+  },
+  "jobs": [
+    {
+      "id": "refresh",
+      "label": {
+        "es": "Actualizar catálogo",
+        "en": "Refresh catalog"
+      },
+      "everyMin": 360,
+      "everyOptions": [
+        180,
+        360,
+        720,
+        1440
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "maxQuality",
+      "type": "select",
+      "label": "Calidad máxima",
+      "labelEn": "Max quality",
+      "default": "auto",
+      "options": [
+        {
+          "value": "auto",
+          "label": "Automática",
+          "labelEn": "Automatic"
+        },
+        {
+          "value": "1080p",
+          "label": "1080p",
+          "labelEn": "1080p"
+        },
+        {
+          "value": "720p",
+          "label": "720p",
+          "labelEn": "720p"
+        },
+        {
+          "value": "480p",
+          "label": "480p",
+          "labelEn": "480p"
+        }
+      ],
+      "hint": "La copia que se reproduce primero no supera esta calidad.",
+      "hintEn": "The copy that plays first never exceeds this quality."
+    },
+    {
+      "key": "catalogStatus",
+      "type": "status",
+      "label": "Catálogo",
+      "labelEn": "Catalog"
+    }
+  ],
+  "signature": {
+    "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
+    "value": "065c02fb925e86737cb2271ba488df7afd52588b1c5b23b9c347a13c1e275eb3f6292deb1e363b23de8a7ceed7600f63485256b56def81a0278c0ed9914f7604"
+  }
+}

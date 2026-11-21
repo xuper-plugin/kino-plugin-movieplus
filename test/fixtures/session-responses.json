@@ -1,0 +1,69 @@
+{
+  "_note": "Structure of the api.appsxploit.dev responses; every token, id and grant value is a placeholder. Tests assert structure/behavior only.",
+  "challenge": {
+    "challenge": "jwt-challenge-fixture",
+    "attestationChallenge": "attestation-challenge-fixture",
+    "expiresAtMs": 1795227827052,
+    "algorithm": "RS256",
+    "schemaVersion": 1,
+    "ok": true,
+    "serverNowMs": 1795227707090
+  },
+  "session": {
+    "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000",
+    "expiresAtMs": 1795228607402,
+    "trustTier": "compatible",
+    "sessionToken": "session-token-fixture",
+    "schemaVersion": 1,
+    "ok": true,
+    "serverNowMs": 1795227707402
+  },
+  "bootstrap": {
+    "snapshotId": "settings_snapshot-id-fixture",
+    "snapshotHash": "snapshot-hash-fixture",
+    "revision": 21,
+    "expiresAtMs": 1795228607402,
+    "admission": {
+      "epoch": 1,
+      "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000",
+      "expiresAtMs": 1795228607402,
+      "accountBound": false,
+      "grants": {
+        "bootstrap": "grant-bootstrap-fixture",
+        "catalog": "grant-catalog-fixture",
+        "catalog-value": "grant-catalog-value-fixture",
+        "firebase-session": "grant-firebase-session-fixture",
+        "download-control": "grant-download-control-fixture"
+      }
+    },
+    "schemaVersion": 1,
+    "ok": true,
+    "serverNowMs": 1795227708939,
+    "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "auth": {
+    "ok": true,
+    "token": "custom-token-fixture",
+    "uid": "movp_guest",
+    "expiresIn": 897,
+    "role": "guest",
+    "verifierStored": false,
+    "expiresInSeconds": 897,
+    "authLeaseExpiresAt": 1795228607402,
+    "admission": {
+      "epoch": 1,
+      "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000",
+      "expiresAtMs": 1795228607402,
+      "accountBound": false,
+      "grants": {
+        "firebase-session": "grant-firebase-session-fixture",
+        "catalog": "grant-catalog-fixture",
+        "catalog-value": "grant-catalog-value-fixture",
+        "download-control": "grant-download-control-fixture"
+      }
+    },
+    "schemaVersion": 1,
+    "serverNowMs": 1795227710019,
+    "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

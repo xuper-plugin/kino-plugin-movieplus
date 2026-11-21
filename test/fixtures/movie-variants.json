@@ -1,0 +1,20 @@
+{
+  "movieLinks": {
+    "schemaVersion": 3,
+    "ok": true,
+    "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000",
+    "serverNowMs": 1795227710502,
+    "movieId": 15066,
+    "revision": "0000000000000000000000000000000000000000000000000000000000000000",
+    "variantCount": 2,
+    "variants": [
+      "CAST,_,529.64 MB,_,Movp2!::cv-20261027-0c585f4dfc8b.FAKEPART0001.FAKESIGNATURE0001",
+      "1080p DUAL,_,6.83 GB,_,Movp2!::cv-20261027-0c585f4dfc8b.FAKEPART0002.FAKESIGNATURE0002"
+    ],
+    "expiresAtMs": 1795227770502
+  },
+  "schemaVersion": 1,
+  "ok": true,
+  "serverNowMs": 1795227710542,
+  "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000"
+}

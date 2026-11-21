@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "status": "resolved",
+  "ok": true,
+  "serverNowMs": 1795227711771,
+  "installationId": "install_0000000000000000000000000000000000000000000000000000000000000000",
+  "tokenHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "purpose": "link",
+  "value": "https://mds.storage.yandex.net/rdisk/FAKEHASH/6b011fa8/FAKEPATH==?uid=0&filename=Walking%20Tall%20The%20Payback%201080p%20DUAL%20id_15066.mkv&disposition=attachment&content_type=video%2Fx-matroska&fsize=7330235046&media_type=video&tknv=v3",
+  "expiresAtMs": 1795227768000
+}
