@@ -29,6 +29,9 @@ globalThis.kino = {
   log: (...a) => { logged.push(a.join(" ")); },
   error: (code, message) => new KinoError(code, message),
   async fetch() { throw new Error("offline"); },
+  // kino.vault.get() (apiVersion 28): Kino resolves the plugin's secret itself. Default: a valid recipe (tests that need a
+  // non-member or a failure replace this per test).
+  vault: { get: async () => ({ apiBase: "https://movp.backend", appVersion: "1", versionCode: 1, channel: "c", settingsProfile: 1, reqPrefix: "RQ", sessionPrefix: "SS" }) },
 };
 
 const { CATEGORIES } = await import("../src/movp/catalog.js");
@@ -171,21 +174,15 @@ test("open without a catalog falls to the gate (download)", async () => {
 
 test("two-step gate: a non-member is stopped at the vault (members gate) and the catalog is NEVER downloaded", async () => {
   store.delete("movp:recipe:v1"); // no cached recipe → the vault is actually queried
-  const origFetch = globalThis.kino.fetch;
-  globalThis.kino.identity = { telegram: async () => ({ id: "p".repeat(32), deviceKey: "k", signature: "s", author: "A", codeHash: "c" }) };
-  globalThis.kino.fetch = async (url) => {
-    const secrets = String(url).includes("/secrets/");
-    const status = secrets ? 403 : 200;
-    const body = secrets ? { error: "not_member" } : { challenge: "c".repeat(20) };
-    return { ok: status >= 200 && status < 300, status, json: () => body, text: () => JSON.stringify(body) };
-  };
+  const origVault = globalThis.kino.vault;
+  // Kino's kino.vault.get() throws not_member for someone outside the group (it ran the whole exchange itself).
+  globalThis.kino.vault = { get: async () => { const e = new Error("no"); e.code = "not_member"; throw e; } };
   try {
     const r = await screenEvent({ name: "open", state: {} });
     assert.equal(r.state.members, true, "the members-only gate is shown");
     assert.ok(!r.state.downloading && !r.state.importing, "the catalog is never downloaded for a non-member");
   } finally {
-    globalThis.kino.fetch = origFetch;
-    delete globalThis.kino.identity;
+    globalThis.kino.vault = origVault;
   }
 });
 

@@ -718,10 +718,6 @@ function getIdentity() {
 }
 
 // src/movp/vault.js
-var VAULT_BASE = "https://secrets.kinoverse.app";
-var OWNER = "xuper-plugin";
-var REPO = "kino-plugin-movieplus";
-var PLUGIN_ID = "movieplus";
 var RECIPE_KEY = "movp:recipe:v1";
 var TTL_MS = 60 * 60 * 1e3;
 var REQUIRED = ["apiBase", "appVersion", "versionCode", "channel", "settingsProfile", "reqPrefix", "sessionPrefix"];
@@ -744,68 +740,38 @@ function recipe() {
   if (!r) throw getKino3().error("recipe_unavailable", "Abre Movie+ para activarlo y vuelve a intentarlo.");
   return r;
 }
-async function fetchChallenge() {
-  const resp = await getKino3().fetch(VAULT_BASE + "/session/challenge", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: "{}"
-  });
-  if (!resp.ok) throw getKino3().error("unavailable", `vault challenge HTTP ${resp.status}`);
-  const data = resp.json();
-  if (!data || !data.challenge) throw getKino3().error("unavailable", "vault challenge missing");
-  return data.challenge;
-}
 async function ensureRecipe() {
   const have = cached();
   if (have) return have;
   const k = getKino3();
-  const challenge = await fetchChallenge();
-  try {
-    k.log && k.log("Movie+ vault: challenge ok, calling kino.identity");
-  } catch (_) {
+  if (!k.vault || typeof k.vault.get !== "function") {
+    throw k.error("unavailable", "Movie+ necesita una versi\xF3n m\xE1s nueva de Kino.");
   }
-  let idp;
+  let r;
   try {
-    idp = await k.identity.telegram({ challenge });
-  } catch (e) {
     try {
-      k.log && k.log("Movie+ vault: kino.identity threw code=" + (e && e.code || "?") + " msg=" + (e && e.message || e));
+      k.log && k.log("Movie+ vault: calling kino.vault.get()");
     } catch (_) {
     }
-    throw e;
+    r = await k.vault.get();
+  } catch (e) {
+    const code = e && e.code || "unavailable";
+    try {
+      k.log && k.log("Movie+ vault: kino.vault.get threw code=" + code);
+    } catch (_) {
+    }
+    if (code === "not_member") throw k.error("not_member", "Movie+ es para los miembros del grupo de Kino.");
+    if (code === "not_found") throw k.error("unavailable", "Movie+ no est\xE1 disponible ahora mismo.");
+    if (code === "rate_limited") throw k.error("rate_limited", "Demasiadas solicitudes a Movie+; intenta en un momento.");
+    throw k.error("unavailable", "No se pudo activar Movie+. Revisa tu conexi\xF3n y reintenta.");
   }
-  try {
-    k.log && k.log("Movie+ vault: identity id=" + (idp && idp.id ? "yes" : "no") + " deviceKey=" + (idp && idp.deviceKey ? "yes" : "no") + " sig=" + (idp && idp.signature ? "yes" : "no") + " author=" + (idp && idp.author) + " codeHash=" + (idp && idp.codeHash ? "yes" : "no") + " token=" + (idp && idp.token ? "yes" : "no"));
-  } catch (_) {
-  }
-  if (!idp || !idp.id || !idp.deviceKey || !idp.signature) throw k.error("unavailable", "kino.identity did not sign the vault challenge");
-  const body = {
-    pluginId: PLUGIN_ID,
-    challenge,
-    id: idp.id,
-    deviceKey: idp.deviceKey,
-    signature: idp.signature,
-    author: idp.author,
-    codeHash: idp.codeHash
-  };
-  if (idp.token) body.token = idp.token;
-  const resp = await k.fetch(VAULT_BASE + `/secrets/${OWNER}/${REPO}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  try {
-    k.log && k.log("Movie+ vault: POST /secrets -> " + resp.status);
-  } catch (_) {
-  }
-  if (resp.status === 403) throw k.error("not_member", "Movie+ es para los miembros del grupo de Kino.");
-  if (resp.status === 429) throw k.error("rate_limited", "Demasiadas solicitudes a Movie+; intenta en un momento.");
-  if (!resp.ok) throw k.error("unavailable", `vault read HTTP ${resp.status}`);
-  const data = resp.json();
-  const r = data && data.secret;
   if (!valid(r)) throw k.error("unavailable", "the Movie+ recipe from the vault is invalid");
   try {
     k.storage.set(RECIPE_KEY, JSON.stringify({ at: Date.now(), recipe: r }));
+  } catch (_) {
+  }
+  try {
+    k.log && k.log("Movie+ vault: recipe ready");
   } catch (_) {
   }
   return r;

@@ -1,8 +1,8 @@
 {
   "id": "movieplus",
   "name": "Movie+",
-  "version": "0.1.4",
-  "apiVersion": 19,
+  "version": "0.1.5",
+  "apiVersion": 28,
   "entry": "plugin.js",
   "icon": "icon.png",
   "description": "Películas y series de Movie+: catálogo que se actualiza solo, reproducción nativa y pantalla propia.",
@@ -31,10 +31,10 @@
     "storageLarge",
     "screen",
     "schedule",
-    "identity"
+    "identity",
+    "vault"
   ],
   "hosts": [
-    "secrets.kinoverse.app",
     "api.appsxploit.dev",
     "raw.githubusercontent.com",
     "appsdevxp.com",
@@ -124,6 +124,6 @@
   ],
   "signature": {
     "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
-    "value": "c8907ffb6e05a9cfaa5412f9c6e576323485d2e53a2cdcaab638ab56fca08ace566fc1d7ea629e400438e6e392298cf18cb280b0cb156032580314c592d35607"
+    "value": "3a50bd174a1cdbb42184da28f47881fa9f9a18b13ec5a4256aff13e488fb14d6e6a19886dfb80cd5112cf156b8e1ceb4af5992e585cde6c8a799e1a6f3f6a20a"
   }
 }
