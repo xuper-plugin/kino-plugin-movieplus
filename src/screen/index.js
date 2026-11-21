@@ -61,28 +61,29 @@ export async function screenEvent(ev) {
   const value = ev && (ev.value != null ? ev.value : ev.arg);
   const state = (ev && ev.state) || {};
   try {
-    if (name === "open") {
-      // Mint the backend recipe from the vault FIRST, before the catalog gate — kino.identity works only here (a person-
-      // started screen call), and the recipe is independent of the catalog download, so it must not be gated behind it.
-      // The vault is gated server-side by group membership + this plugin's signed author key, so a non-member — or a copy
-      // re-signed with another key — gets `not_member` and cannot play anything (session.js has no hardcoded fallback).
-      let memberToast = null;
+    if (name === "open" || name === "verify") {
+      // TWO STEPS. Step 1: verify vault access BEFORE anything else — mint the backend recipe (kino.identity works only
+      // here, a person-started screen call). The vault is gated server-side by group membership + this plugin's signed
+      // author key, so a non-member — or a copy re-signed with another key — fails here and the catalog is NEVER
+      // downloaded. A cached recipe makes this instant. `verify` is the gate's retry button.
+      const clear = { members: false, verifyFailed: false };
       try {
         await ensureRecipe();
       } catch (e) {
-        if (e && e.code === "not_member") {
-          memberToast = { text: "Movie+ es para los miembros del grupo de Kino. Únete al grupo y reinstala Movie+.",
-            textEn: "Movie+ is for members of the Kino group. Join the group and reinstall Movie+.", role: "error" };
-        }
-        // other causes (offline, rate limit): leave it; browsing works and playback retries the mint on the next open
+        const code = e && e.code;
+        if (code === "not_member") return { state: { ready: true, members: true, verifyFailed: false, downloading: false, importing: false, empty: false } };
+        // offline / rate limit / identity error: a retry gate, NOT a silent catalog download
+        return { state: { ready: true, verifyFailed: true, members: false } };
       }
-      const answer = await handleGateEvent(name, value, state);
-      if (needsGate({ ...state, ...answer.state })) return memberToast ? { ...answer, toast: memberToast } : answer;
+      // Step 2: access verified → the catalog gate (download/import).
+      const base = { ...state, ...clear };
+      const answer = await handleGateEvent("open", value, base);
+      const merged = { ...base, ...(answer.state || {}), ...clear };
+      if (needsGate(merged)) return { state: { ...(answer.state || {}), ...clear } };
       try {
         await ensureSession();
-      } catch (_) { /* offline / no recipe yet: browsing the local catalog still works, playback retries the session */ }
-      const out = { state: await readyState(state.tab || DEFAULT_TAB) };
-      return memberToast ? { ...out, toast: memberToast } : out;
+      } catch (_) { /* offline: browsing the local catalog still works, playback retries the session */ }
+      return { state: { ...clear, ...await readyState(state.tab || DEFAULT_TAB) } };
     }
     if (GATE_EVENTS.has(name)) return afterGate(await handleGateEvent(name, value, state), state);
     switch (name) {

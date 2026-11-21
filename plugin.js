@@ -1345,7 +1345,7 @@ var getKino8 = () => globalThis.kino;
 var FAILED_DOWNLOAD = { text: "No se pudo descargar; reintenta", textEn: "Download failed; try again", role: "error" };
 function needsGate(state) {
   const s = state || {};
-  return !!(s.downloading || s.importing || !s.ready || s.empty);
+  return !!(s.members || s.verifyFailed || s.downloading || s.importing || !s.ready || s.empty);
 }
 function gateView(state) {
   const s = state || {};
@@ -1355,7 +1355,30 @@ function gateView(state) {
     { type: "Text", text: "Pel\xEDculas y series para ver cuando quieras.", textEn: "Movies and series to watch whenever you want.", style: "p" }
   ];
   let tick = null;
-  if (phase === "loading") {
+  if (s.members) {
+    children.push({
+      type: "Text",
+      text: "Movie+ es para los miembros del grupo de Kino. \xDAnete al grupo y vuelve a intentarlo.",
+      textEn: "Movie+ is for members of the Kino group. Join the group and try again.",
+      style: "p"
+    });
+    children.push({
+      type: "ElevatedButton",
+      icon: "open_in_new",
+      labelText: "Unirme al grupo",
+      labelTextEn: "Join the group",
+      onPressed: { go: { url: { href: "https://t.me/Kinoapptv", title: "Grupo de Kino" } } }
+    });
+    children.push({ type: "TextButton", labelText: "Ya me un\xED, reintentar", labelTextEn: "I joined \u2014 retry", onPressed: "verify" });
+  } else if (s.verifyFailed) {
+    children.push({
+      type: "Text",
+      text: "No se pudo verificar tu acceso. Revisa tu conexi\xF3n y reintenta.",
+      textEn: "Could not verify your access. Check your connection and try again.",
+      style: "p"
+    });
+    children.push({ type: "ElevatedButton", icon: "refresh", labelText: "Reintentar", labelTextEn: "Retry", onPressed: "verify" });
+  } else if (phase === "loading") {
     children.push({ type: "CircularProgressIndicator", text: "Cargando\u2026", textEn: "Loading\u2026" });
   } else if (phase === "downloading") {
     children.push({ type: "LinearProgressIndicator", labelText: "Descargando cat\xE1logo\u2026", labelTextEn: "Downloading catalog\u2026" });
@@ -1637,27 +1660,24 @@ async function screenEvent(ev) {
   const value = ev && (ev.value != null ? ev.value : ev.arg);
   const state = ev && ev.state || {};
   try {
-    if (name === "open") {
-      let memberToast = null;
+    if (name === "open" || name === "verify") {
+      const clear = { members: false, verifyFailed: false };
       try {
         await ensureRecipe();
       } catch (e) {
-        if (e && e.code === "not_member") {
-          memberToast = {
-            text: "Movie+ es para los miembros del grupo de Kino. \xDAnete al grupo y reinstala Movie+.",
-            textEn: "Movie+ is for members of the Kino group. Join the group and reinstall Movie+.",
-            role: "error"
-          };
-        }
+        const code = e && e.code;
+        if (code === "not_member") return { state: { ready: true, members: true, verifyFailed: false, downloading: false, importing: false, empty: false } };
+        return { state: { ready: true, verifyFailed: true, members: false } };
       }
-      const answer = await handleGateEvent(name, value, state);
-      if (needsGate({ ...state, ...answer.state })) return memberToast ? { ...answer, toast: memberToast } : answer;
+      const base = { ...state, ...clear };
+      const answer = await handleGateEvent("open", value, base);
+      const merged = { ...base, ...answer.state || {}, ...clear };
+      if (needsGate(merged)) return { state: { ...answer.state || {}, ...clear } };
       try {
         await ensureSession();
       } catch (_) {
       }
-      const out = { state: await readyState(state.tab || DEFAULT_TAB) };
-      return memberToast ? { ...out, toast: memberToast } : out;
+      return { state: { ...clear, ...await readyState(state.tab || DEFAULT_TAB) } };
     }
     if (GATE_EVENTS.has(name)) return afterGate(await handleGateEvent(name, value, state), state);
     switch (name) {

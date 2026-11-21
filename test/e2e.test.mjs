@@ -19,6 +19,11 @@ const fetchImpl = async (url, init = {}) => {
 
 const { kino } = createKino(manifest, { fetchImpl, config: {}, env: {} });
 globalThis.kino = kino;
+// A cached vault recipe so the "verify" step short-circuits (the shim's fetch does not mock the vault) and `open` runs
+// the catalog gate end to end.
+kino.storage.set("movp:recipe:v1", JSON.stringify({ at: Date.now(), recipe: {
+  apiBase: "https://movp.backend", appVersion: "1", versionCode: 1, channel: "c", settingsProfile: 1, reqPrefix: "RQ", sessionPrefix: "SS",
+} }));
 const plugin = await import("../plugin.js");
 
 const find = (node, pred, out = []) => {

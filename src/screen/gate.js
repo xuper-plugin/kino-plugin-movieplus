@@ -22,7 +22,7 @@ const FAILED_DOWNLOAD = { text: "No se pudo descargar; reintenta", textEn: "Down
 /** True while the gate (not the normal screen) must be drawn for `state`. */
 export function needsGate(state) {
   const s = state || {};
-  return !!(s.downloading || s.importing || !s.ready || s.empty);
+  return !!(s.members || s.verifyFailed || s.downloading || s.importing || !s.ready || s.empty);
 }
 
 /** The gate for the current phase; `state.phase` wins, else it is derived from the state flags. */
@@ -35,7 +35,19 @@ export function gateView(state) {
     { type: "Text", text: "Películas y series para ver cuando quieras.", textEn: "Movies and series to watch whenever you want.", style: "p" },
   ];
   let tick = null;
-  if (phase === "loading") {
+  if (s.members) {
+    // Step 1 (vault) said this person is not in the Kino group — or this is a copy re-signed with another key. The
+    // catalog never downloads here; access is verified before anything else.
+    children.push({ type: "Text", text: "Movie+ es para los miembros del grupo de Kino. Únete al grupo y vuelve a intentarlo.",
+      textEn: "Movie+ is for members of the Kino group. Join the group and try again.", style: "p" });
+    children.push({ type: "ElevatedButton", icon: "open_in_new", labelText: "Unirme al grupo", labelTextEn: "Join the group",
+      onPressed: { go: { url: { href: "https://t.me/Kinoapptv", title: "Grupo de Kino" } } } });
+    children.push({ type: "TextButton", labelText: "Ya me uní, reintentar", labelTextEn: "I joined — retry", onPressed: "verify" });
+  } else if (s.verifyFailed) {
+    children.push({ type: "Text", text: "No se pudo verificar tu acceso. Revisa tu conexión y reintenta.",
+      textEn: "Could not verify your access. Check your connection and try again.", style: "p" });
+    children.push({ type: "ElevatedButton", icon: "refresh", labelText: "Reintentar", labelTextEn: "Retry", onPressed: "verify" });
+  } else if (phase === "loading") {
     children.push({ type: "CircularProgressIndicator", text: "Cargando…", textEn: "Loading…" });
   } else if (phase === "downloading") {
     children.push({ type: "LinearProgressIndicator", labelText: "Descargando catálogo…", labelTextEn: "Downloading catalog…" });

@@ -58,6 +58,10 @@ function installCatalog() {
 beforeEach(() => {
   store.clear();
   rows.clear();
+  // A cached recipe so the vault "verify" step short-circuits (no network) and `open` proceeds to the catalog gate.
+  store.set("movp:recipe:v1", JSON.stringify({ at: Date.now(), recipe: {
+    apiBase: "https://movp.backend", appVersion: "1", versionCode: 1, channel: "c", settingsProfile: 1, reqPrefix: "RQ", sessionPrefix: "SS",
+  } }));
 });
 
 test("richView normal: Movie+ AppBar with close and search/refresh/settings actions", () => {
@@ -162,7 +166,27 @@ test("peliculas rows: recent (capped) plus genre rows", async () => {
 });
 
 test("open without a catalog falls to the gate (download)", async () => {
-  assert.deepEqual(await screenEvent({ name: "open", state: {} }), { state: { ready: true, downloading: true } });
+  assert.deepEqual(await screenEvent({ name: "open", state: {} }), { state: { ready: true, downloading: true, members: false, verifyFailed: false } });
+});
+
+test("two-step gate: a non-member is stopped at the vault (members gate) and the catalog is NEVER downloaded", async () => {
+  store.delete("movp:recipe:v1"); // no cached recipe → the vault is actually queried
+  const origFetch = globalThis.kino.fetch;
+  globalThis.kino.identity = { telegram: async () => ({ id: "p".repeat(32), deviceKey: "k", signature: "s", author: "A", codeHash: "c" }) };
+  globalThis.kino.fetch = async (url) => {
+    const secrets = String(url).includes("/secrets/");
+    const status = secrets ? 403 : 200;
+    const body = secrets ? { error: "not_member" } : { challenge: "c".repeat(20) };
+    return { ok: status >= 200 && status < 300, status, json: () => body, text: () => JSON.stringify(body) };
+  };
+  try {
+    const r = await screenEvent({ name: "open", state: {} });
+    assert.equal(r.state.members, true, "the members-only gate is shown");
+    assert.ok(!r.state.downloading && !r.state.importing, "the catalog is never downloaded for a non-member");
+  } finally {
+    globalThis.kino.fetch = origFetch;
+    delete globalThis.kino.identity;
+  }
 });
 
 test("open with an installed catalog loads the first tab", async () => {
