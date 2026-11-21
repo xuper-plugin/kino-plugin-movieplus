@@ -1492,6 +1492,73 @@ async function handleGateEvent(name, _value, _state) {
   }
 }
 
+// src/screen/hero.js
+var KEY = "movp:hero:v1";
+var MAX = 150;
+var POOL = 8;
+var SLIDES = 5;
+var BUDGET_MS = 6e3;
+var HTTPS = /^https:\/\//;
+var getKino9 = () => globalThis.kino;
+function read() {
+  try {
+    const o = JSON.parse(getKino9().storage.get(KEY) || "null");
+    return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+  } catch (_) {
+    return {};
+  }
+}
+function write(book) {
+  try {
+    const ids = Object.keys(book);
+    if (ids.length > MAX) for (const id of ids.slice(0, ids.length - MAX)) delete book[id];
+    getKino9().storage.set(KEY, JSON.stringify(book));
+  } catch (_) {
+  }
+}
+function metaUsable() {
+  try {
+    return typeof getKino9().meta === "function";
+  } catch (_) {
+    return false;
+  }
+}
+async function heroSlides(cards) {
+  const list = Array.isArray(cards) ? cards : [];
+  const book = read();
+  const k = getKino9();
+  const canAsk = metaUsable();
+  const end = Date.now() + BUDGET_MS;
+  let dirty = false;
+  const out = [];
+  for (const c of list.slice(0, POOL)) {
+    if (out.length >= SLIDES) break;
+    if (!c || typeof c.id !== "string" || !(c.ids && Number.isInteger(c.ids.tmdb))) continue;
+    let e = book[c.id];
+    if (e === void 0 && canAsk && Date.now() < end) {
+      try {
+        const a = await k.meta({
+          type: c.kind === "series" ? "series" : "movie",
+          ids: { tmdb: c.ids.tmdb },
+          title: c.title,
+          ...c.year ? { year: c.year } : {}
+        });
+        e = { b: a && typeof a.backdrop === "string" ? a.backdrop : "", l: a && typeof a.logo === "string" ? a.logo : "" };
+        book[c.id] = e;
+        dirty = true;
+      } catch (err) {
+        if (err && err.code === "rate_limited") break;
+        continue;
+      }
+    }
+    if (e && HTTPS.test(e.b || "")) {
+      out.push({ id: c.id, ref: c.ref, kind: c.kind, title: c.title, image: e.b, ...e.l && HTTPS.test(e.l) ? { logo: e.l } : {} });
+    }
+  }
+  if (dirty) write(book);
+  return out;
+}
+
 // src/screen/view.js
 var TITLE2 = "Movie+";
 var DEFAULT_TAB = CATEGORIES[0].key;
@@ -1554,9 +1621,37 @@ function emptyRow() {
     textEn: "This category has no content for now."
   };
 }
+function heroSlideNode(s) {
+  return {
+    type: "heroCard",
+    key: "slide-" + s.id,
+    h: { compact: 200, expanded: 240 },
+    ...s.logo ? { logo: s.logo } : {},
+    title: s.title,
+    image: s.image,
+    buttons: [
+      {
+        type: "ElevatedButton",
+        key: "heroOpen-" + s.id,
+        icon: "play",
+        labelText: "Ver",
+        labelTextEn: "Watch",
+        onPressed: { go: { title: { ref: s.ref, kind: s.kind, id: s.id, title: s.title } } }
+      }
+    ]
+  };
+}
+function hero(slides) {
+  const list = (slides || []).filter((s) => s && s.id && s.image);
+  if (list.length === 0) return null;
+  if (list.length === 1) return heroSlideNode(list[0]);
+  return { type: "PageView", key: "hero" + list.length, autoPlayMs: 6e3, children: list.map(heroSlideNode) };
+}
 function browseBody(view) {
   const rows = (view && view.rows || []).filter((r) => r && Array.isArray(r.items) && r.items.length);
-  const children = rows.length ? rows.map(rail) : [emptyRow()];
+  const h = hero(view && view.slides);
+  const rowChildren = rows.length ? rows.map(rail) : [emptyRow()];
+  const children = h ? [h, ...rowChildren] : rowChildren;
   return { type: "SingleChildScrollView", flex: 1, children: [{ type: "Column", gap: 12, children }] };
 }
 function settingsBody(view) {
@@ -1603,11 +1698,13 @@ async function loadView(tab) {
   const cat = CATEGORIES.find((c) => c.key === tab);
   const items = (await recentByCategory(tab, LOAD_ITEMS)).map(card);
   const rows = [];
+  let slides = [];
   if (items.length) {
+    slides = await heroSlides(items);
     rows.push({ title: `${cat.label}: recientes`, titleEn: `${cat.labelEn}: recent`, ref: tab, items: items.slice(0, RECENT_ROW) });
     rows.push(...genreRows(items, tab));
   }
-  return { tab, rows };
+  return { tab, rows, slides };
 }
 async function readyState(tab) {
   const t2 = tabKeyOf(tab);

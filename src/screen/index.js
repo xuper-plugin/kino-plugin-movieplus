@@ -7,6 +7,7 @@ import { ensureSession } from "../movp/session.js";
 import { ensureRecipe } from "../movp/vault.js";
 import { card } from "../contract/index.js";
 import { GATE_EVENTS, gateView, handleGateEvent, needsGate } from "./gate.js";
+import { heroSlides } from "./hero.js";
 import { DEFAULT_TAB, SETTINGS_TAB, richView, tabKeyOf } from "./view.js";
 
 const LOAD_ITEMS = 60;
@@ -31,11 +32,13 @@ async function loadView(tab) {
   const cat = CATEGORIES.find((c) => c.key === tab);
   const items = (await recentByCategory(tab, LOAD_ITEMS)).map(card);
   const rows = [];
+  let slides = [];
   if (items.length) {
+    slides = await heroSlides(items);
     rows.push({ title: `${cat.label}: recientes`, titleEn: `${cat.labelEn}: recent`, ref: tab, items: items.slice(0, RECENT_ROW) });
     rows.push(...genreRows(items, tab));
   }
-  return { tab, rows };
+  return { tab, rows, slides };
 }
 
 async function readyState(tab) {

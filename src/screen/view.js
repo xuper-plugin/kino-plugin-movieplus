@@ -52,9 +52,35 @@ function emptyRow() {
   };
 }
 
+// One hero slide: a big landscape card (backdrop, optional title logo) whose "Ver" button opens Kino's NATIVE
+// detail page — the same `go.title` a tapped poster uses. `s`: { id, ref, kind, title, image, logo? }.
+function heroSlideNode(s) {
+  return {
+    type: "heroCard", key: "slide-" + s.id, h: { compact: 200, expanded: 240 },
+    ...(s.logo ? { logo: s.logo } : {}),
+    title: s.title, image: s.image,
+    buttons: [
+      { type: "ElevatedButton", key: "heroOpen-" + s.id, icon: "play", labelText: "Ver", labelTextEn: "Watch",
+        onPressed: { go: { title: { ref: s.ref, kind: s.kind, id: s.id, title: s.title } } } },
+    ],
+  };
+}
+
+// The hero: one slide is drawn alone; several auto-advance in a PageView. The key carries the slide count because
+// Kino's pager keeps the count of its first drawing — a slider that changes count crashes with an index out of
+// bounds, so a new count needs a new key (same gotcha the browse module documents).
+function hero(slides) {
+  const list = (slides || []).filter((s) => s && s.id && s.image);
+  if (list.length === 0) return null;
+  if (list.length === 1) return heroSlideNode(list[0]);
+  return { type: "PageView", key: "hero" + list.length, autoPlayMs: 6000, children: list.map(heroSlideNode) };
+}
+
 function browseBody(view) {
   const rows = ((view && view.rows) || []).filter((r) => r && Array.isArray(r.items) && r.items.length);
-  const children = rows.length ? rows.map(rail) : [emptyRow()];
+  const h = hero(view && view.slides);
+  const rowChildren = rows.length ? rows.map(rail) : [emptyRow()];
+  const children = h ? [h, ...rowChildren] : rowChildren;
   return { type: "SingleChildScrollView", flex: 1, children: [{ type: "Column", gap: 12, children }] };
 }
 

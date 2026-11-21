@@ -107,6 +107,39 @@ test("richView draws poster rows whose items open the native detail", () => {
   assert.deepEqual(rail.items, [item]);
 });
 
+test("richView draws a single hero slide as a heroCard above the rails", () => {
+  const slide = { id: "m10", ref: "m:10", kind: "movie", title: "Halo", image: "https://image.tmdb.org/t/p/w1280/b.jpg", logo: "https://image.tmdb.org/t/p/w500/l.png" };
+  const v = richView({ ready: true, tab: "peliculas", view: { rows: [{ title: "Recientes", titleEn: "Recent", ref: "peliculas", items: [{ id: "m10", ref: "m:10", title: "Halo", kind: "movie" }] }], slides: [slide] } });
+  const [card] = find(v, (n) => n.type === "heroCard");
+  assert.equal(card.image, slide.image);
+  assert.equal(card.logo, slide.logo);
+  assert.equal(card.title, "Halo");
+  assert.deepEqual(card.buttons[0].onPressed, { go: { title: { ref: "m:10", kind: "movie", id: "m10", title: "Halo" } } });
+  assert.deepEqual(card.buttons[0].labelText, "Ver");
+  assert.deepEqual(card.buttons[0].labelTextEn, "Watch");
+  // the hero sits above the poster rails
+  const scroll = find(v, (n) => n.type === "SingleChildScrollView")[0];
+  const col = scroll.children[0];
+  assert.equal(col.children[0].type, "heroCard");
+  assert.equal(col.children[1].type, "titleRail");
+});
+
+test("richView draws several hero slides as an auto-advancing PageView keyed by count", () => {
+  const slides = [10, 20, 30].map((n) => ({ id: "m" + n, ref: "m:" + n, kind: "movie", title: "T" + n, image: "https://image.tmdb.org/t/p/w1280/b" + n + ".jpg" }));
+  const v = richView({ ready: true, tab: "peliculas", view: { rows: [], slides } });
+  const [pager] = find(v, (n) => n.type === "PageView");
+  assert.equal(pager.key, "hero3");
+  assert.equal(pager.autoPlayMs, 6000);
+  assert.equal(pager.children.length, 3);
+  assert.equal(pager.children[0].type, "heroCard");
+});
+
+test("richView: no slides → no hero node", () => {
+  const v = richView({ ready: true, tab: "peliculas", view: { rows: [{ title: "R", titleEn: "R", ref: "peliculas", items: [{ id: "m1", ref: "m:1", title: "A", kind: "movie" }] }], slides: [] } });
+  assert.equal(find(v, (n) => n.type === "heroCard").length, 0);
+  assert.equal(find(v, (n) => n.type === "PageView").length, 0);
+});
+
 test("richView: an empty tab (Duanju) draws an empty state without throwing", () => {
   for (const view of [undefined, { tab: "duanju", rows: [] }, { rows: [{ title: "x", items: [] }] }]) {
     const v = richView({ ready: true, tab: "duanju", view });
