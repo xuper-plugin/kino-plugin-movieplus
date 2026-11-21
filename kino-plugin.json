@@ -1,14 +1,14 @@
 {
   "id": "movieplus",
   "name": "Movie+",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "apiVersion": 28,
   "entry": "plugin.js",
   "icon": "icon.png",
   "description": "Películas y series de Movie+: catálogo que se actualiza solo, reproducción nativa y pantalla propia.",
   "author": "xuper-plugin",
   "homepage": "https://github.com/xuper-plugin/kino-plugin-movieplus",
-  "discoverable": false,
+  "discoverable": true,
   "tags": [
     "películas",
     "series",
@@ -124,6 +124,6 @@
   ],
   "signature": {
     "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
-    "value": "3a50bd174a1cdbb42184da28f47881fa9f9a18b13ec5a4256aff13e488fb14d6e6a19886dfb80cd5112cf156b8e1ceb4af5992e585cde6c8a799e1a6f3f6a20a"
+    "value": "3609454ba0a840d80967e238cf47ecd5fa78a95138e671e491b951923be869ad173cc5fed4980c722455a36b7791eeeb9ec7c209ee33d5b158fa4f0787abfb07"
   }
 }
