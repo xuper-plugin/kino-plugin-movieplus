@@ -19,7 +19,7 @@ let vaultCalls = 0;
 let vaultAnswer = RECIPE;
 let fetchHandler = () => ({ status: 200, bytes: sampleGz });
 
-class KinoError extends Error { constructor(code, message) { super(message); this.code = code; } }
+class KinoError extends Error { constructor(code, message, extra) { super(message); this.code = code; if (extra) Object.assign(this, extra); } }
 
 globalThis.kino = {
   crypto: { gunzip: (data) => gunzipSync(Buffer.from(data, "base64")).toString("utf8") },
@@ -41,7 +41,7 @@ globalThis.kino = {
       return vaultAnswer;
     },
   },
-  error: (code, message) => new KinoError(code, message),
+  error: (code, message, extra) => new KinoError(code, message, extra),
   async fetch(url) {
     const { status = 200, bytes, headers = {} } = await fetchHandler(url);
     return { ok: status >= 200 && status < 300, status, url, headers, base64: () => Buffer.from(bytes || []).toString("base64") };
@@ -52,6 +52,7 @@ const plugin = await import("../src/plugin.js");
 const { screen, screenEvent } = plugin;
 
 beforeEach(() => {
+  delete globalThis.kino.lang;
   store.clear();
   rows.clear();
   vaultCalls = 0;
@@ -69,9 +70,10 @@ async function runAll(maxSteps = 60) {
   throw new Error("setupRun never finished");
 }
 
-test("manifest declares setup route under enhancements 29 and keeps the current apiVersion", () => {
-  assert.deepEqual(manifest.enhancements, { 29: { setup: { route: "setup" } } });
-  assert.ok(manifest.apiVersion < 29);
+test("manifest declares setup route under enhancements 30 and keeps the current apiVersion", () => {
+  // Kino's setup is apiVersion 30 (29 is go.relinkTelegram): a Kino at 29 ignores the block.
+  assert.deepEqual(manifest.enhancements, { 30: { setup: { route: "setup" } } });
+  assert.ok(manifest.apiVersion < 30);
   assert.ok(manifest.capabilities.includes("screen"));
 });
 
@@ -144,9 +146,22 @@ test("setupRun is done at once when already set up", async () => {
 });
 
 test("the screen answers route setup with the gate, and open runs the same setup", async () => {
-  const v = await screen({ route: "setup", state: {} });
+  // Kino hands the route as an object, { name, params, args }.
+  const v = await screen({ route: { name: "setup", params: {} }, state: {} });
   assert.equal(v.type, "Scaffold");
-  const a = await screenEvent({ name: "open", state: {}, route: "setup" });
+  const a = await screenEvent({ name: "open", state: {}, route: { name: "setup", params: {} } });
   assert.equal(a.state.downloading, true);
   assert.equal(vaultCalls, 1);
+});
+
+test("the setup lines and a failed step's sentence follow Kino's language", async () => {
+  globalThis.kino.lang = "en-US";
+  assert.equal((await plugin.setupStatus()).label, "Movie+ needs to download its catalog");
+  assert.equal((await plugin.setupRun({ step: 0 })).label, "Activating Movie+…");
+  fetchHandler = () => ({ status: 500, bytes: Buffer.alloc(0) });
+  const e = await plugin.setupRun({ step: 1 }).catch((x) => x);
+  assert.equal(e.code, "unavailable");
+  assert.equal(e.userMessage, "Could not download the catalog, check your connection and try again");
+  globalThis.kino.lang = "es-CO";
+  assert.equal((await plugin.setupStatus()).label, "Movie+ necesita descargar su catálogo");
 });
