@@ -719,6 +719,7 @@ function getIdentity() {
 
 // src/movp/vault.js
 var RECIPE_KEY = "movp:recipe:v1";
+var SEEN_KEY = "movp:recipe:seen:v1";
 var TTL_MS = 60 * 60 * 1e3;
 var REQUIRED = ["apiBase", "appVersion", "versionCode", "channel", "settingsProfile", "reqPrefix", "sessionPrefix"];
 var getKino3 = () => globalThis.kino;
@@ -739,6 +740,16 @@ function recipe() {
   const r = cached();
   if (!r) throw getKino3().error("recipe_unavailable", "Abre Movie+ para activarlo y vuelve a intentarlo.");
   return r;
+}
+function recipeSeen() {
+  try {
+    return getKino3().storage.get(SEEN_KEY) != null || cached() != null;
+  } catch (_) {
+    return false;
+  }
+}
+function hasRecipe() {
+  return cached() != null;
 }
 async function ensureRecipe() {
   const have = cached();
@@ -768,6 +779,10 @@ async function ensureRecipe() {
   if (!valid(r)) throw k.error("unavailable", "the Movie+ recipe from the vault is invalid");
   try {
     k.storage.set(RECIPE_KEY, JSON.stringify({ at: Date.now(), recipe: r }));
+  } catch (_) {
+  }
+  try {
+    k.storage.set(SEEN_KEY, "1");
   } catch (_) {
   }
   try {
@@ -1244,8 +1259,19 @@ async function resolve(ref) {
 var DICT = {
   catalogReady: { es: "{n} t\xEDtulos disponibles", en: "{n} titles available" },
   catalogPending: { es: "{n} t\xEDtulos; hay una actualizaci\xF3n pendiente, se aplica al abrir Movie+", en: "{n} titles; an update is pending, it applies when you open Movie+" },
-  catalogEmpty: { es: "A\xFAn no descargado; abre Movie+ para descargarlo", en: "Not downloaded yet; open Movie+ to download it" }
+  catalogEmpty: { es: "A\xFAn no descargado; abre Movie+ para descargarlo", en: "Not downloaded yet; open Movie+ to download it" },
+  // Plugin setup (apiVersion 30): the lines Kino shows while it sets Movie+ up, and the sentences of a failed step
+  // (kino.error's userMessage; Kino shows only a plain sentence, so no "+" nor URL in those).
+  setupRecipe: { es: "Activando Movie+\u2026", en: "Activating Movie+\u2026" },
+  setupDownload: { es: "Descargando el cat\xE1logo de Movie+\u2026", en: "Downloading the Movie+ catalog\u2026" },
+  setupImport: { es: "Importando el cat\xE1logo de Movie+\u2026", en: "Importing the Movie+ catalog\u2026" },
+  setupNeeds: { es: "Movie+ necesita descargar su cat\xE1logo", en: "Movie+ needs to download its catalog" },
+  setupImportFailed: { es: "No se pudo importar el cat\xE1logo, reintenta", en: "Could not import the catalog, try again" },
+  setupDownloadFailed: { es: "No se pudo descargar el cat\xE1logo, revisa tu conexi\xF3n y reintenta", en: "Could not download the catalog, check your connection and try again" }
 };
+function kinoLang(kino = globalThis.kino) {
+  return String(kino && kino.lang || "es").slice(0, 2).toLowerCase() === "en" ? "en" : "es";
+}
 function t(key, lang = "es", params = {}) {
   const entry = DICT[key];
   if (!entry) return key;
@@ -1423,6 +1449,10 @@ function loadRaw(meta) {
     parts.push(c);
   }
   return parts.join("");
+}
+function importProgress() {
+  const meta = readMeta();
+  return meta ? { done: meta.cursor && Number(meta.cursor.done) || 0, total: Number(meta.total) || 0 } : null;
 }
 async function open() {
   const meta = readMeta();
@@ -1778,6 +1808,43 @@ async function screenEvent(ev) {
   }
 }
 
+// src/setup.js
+var getKino10 = () => globalThis.kino;
+var L = (key) => t(key, kinoLang(getKino10()));
+var clamp = (x) => Math.max(0, Math.min(1, x));
+async function setupStatus() {
+  if (!recipeSeen()) return { ready: false, label: L("setupNeeds"), progress: 0 };
+  if (await isCatalogReady()) return { ready: true };
+  const p = importProgress();
+  return { ready: false, label: L(p ? "setupImport" : "setupNeeds"), progress: p && p.total ? clamp(p.done / p.total) : 0 };
+}
+function stepError(code, message, sentenceKey) {
+  return getKino10().error(code, message, { userMessage: L(sentenceKey) });
+}
+async function setupRun(_args) {
+  if (!hasRecipe()) {
+    await ensureRecipe();
+    return { done: false, progress: 0.02, label: L("setupRecipe") };
+  }
+  const opened = await handleGateEvent("open", null, {});
+  const st = opened && opened.state || {};
+  if (st.importing) {
+    const r = await handleGateEvent("importTick", null, {});
+    const s = r && r.state || {};
+    if (s.empty) throw stepError("unavailable", "No se pudo importar el cat\xE1logo de Movie+. Reintenta.", "setupImportFailed");
+    if (s.importing === false) return { done: true, progress: 1 };
+    const total = Number(s.total) || 0;
+    return { done: false, progress: total ? 0.1 + 0.9 * clamp((Number(s.cursor) || 0) / total) : 0.1, label: L("setupImport") };
+  }
+  if (st.downloading) {
+    const r = await handleGateEvent("fetchCatalog", null, {});
+    const s = r && r.state || {};
+    if (s.empty) throw stepError("unavailable", "No se pudo descargar el cat\xE1logo de Movie+. Revisa tu conexi\xF3n y reintenta.", "setupDownloadFailed");
+    return { done: false, progress: 0.1, label: L("setupDownload") };
+  }
+  return { done: true, progress: 1 };
+}
+
 // src/plugin.js
 async function section() {
   return { items: [] };
@@ -1804,5 +1871,7 @@ export {
   screenEvent,
   search,
   section,
-  settingsStatus
+  settingsStatus,
+  setupRun,
+  setupStatus
 };
