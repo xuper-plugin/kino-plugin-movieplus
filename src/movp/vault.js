@@ -13,6 +13,7 @@
 // (ensureRecipe) and cached ~1h; every other surface (playback/session) reads the cache via recipe().
 
 const RECIPE_KEY = "movp:recipe:v1";
+const SEEN_KEY = "movp:recipe:seen:v1"; // persists past the cache TTL: "this install did get its recipe once" (setupStatus cannot call the vault)
 const TTL_MS = 60 * 60 * 1000; // ~1h: a normal user opens Movie+ far under the vault's rate limit, and rotation propagates within this
 const REQUIRED = ["apiBase", "appVersion", "versionCode", "channel", "settingsProfile", "reqPrefix", "sessionPrefix"];
 
@@ -40,11 +41,16 @@ export function recipe() {
   return r;
 }
 
+/** Whether this install ever obtained its recipe (survives the cache TTL; no network, no vault call). */
+export function recipeSeen() {
+  try { return getKino().storage.get(SEEN_KEY) != null || cached() != null; } catch (_) { return false; }
+}
+
 /** Whether a fresh recipe is cached (no network). */
 export function hasRecipe() { return cached() != null; }
 
 /** Forget the cached recipe (e.g. on a members gate, or to force a re-mint). */
-export function clearRecipe() { try { getKino().storage.remove(RECIPE_KEY); } catch (_) { /* best effort */ } }
+export function clearRecipe() { try { getKino().storage.remove(RECIPE_KEY); getKino().storage.remove(SEEN_KEY); } catch (_) { /* best effort */ } }
 
 /**
  * Mint the recipe from the vault. MUST run inside a person-started screen call (kino.vault.get). On success it caches and
@@ -74,6 +80,7 @@ export async function ensureRecipe() {
   }
   if (!valid(r)) throw k.error("unavailable", "the Movie+ recipe from the vault is invalid");
   try { k.storage.set(RECIPE_KEY, JSON.stringify({ at: Date.now(), recipe: r })); } catch (_) { /* storage full: next open re-mints */ }
+  try { k.storage.set(SEEN_KEY, "1"); } catch (_) { /* best effort */ }
   try { k.log && k.log("Movie+ vault: recipe ready"); } catch (_) {}
   return r;
 }

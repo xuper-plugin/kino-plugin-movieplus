@@ -3,6 +3,7 @@
 
 export { home, search, browse, details, episodes, resolve } from "./contract/index.js";
 export { screen, screenEvent } from "./screen/index.js";
+export { setupStatus, setupRun } from "./setup.js";
 
 import { catalogCount } from "./movp/catalog.js";
 import { catalogStatusText, checkRemote } from "./movp/refresh.js";

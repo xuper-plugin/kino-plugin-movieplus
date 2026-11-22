@@ -3,6 +3,13 @@
   "name": "Movie+",
   "version": "0.1.7",
   "apiVersion": 28,
+  "enhancements": {
+    "29": {
+      "setup": {
+        "route": "setup"
+      }
+    }
+  },
   "entry": "plugin.js",
   "icon": "icon.png",
   "description": "Películas y series de Movie+: catálogo que se actualiza solo, reproducción nativa y pantalla propia.",

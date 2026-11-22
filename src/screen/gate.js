@@ -1,6 +1,6 @@
 // First-run gate: download the Movie+ catalog, then import it in batches. Three phases, each with its own progress bar:
 // idle (a Download button), downloading (indeterminate bar + a tick that fetches) and importing (determinate bar + a
-// tick that imports one batch). The screen composes gateView/handleGateEvent with the rich view.
+// tick that imports one batch). The same steps back the plugin setup (src/setup.js, route "setup"). The screen composes gateView/handleGateEvent with the rich view.
 
 import { catalogCount, isCatalogReady, fetchCatalogText, countItemsText, importTextTick, finishImport } from "../movp/catalog.js";
 import { clearRefreshPending, recordRemote, refreshPending, remoteSignature } from "../movp/refresh.js";
@@ -131,6 +131,12 @@ function loadRaw(meta) {
     parts.push(c);
   }
   return parts.join("");
+}
+
+/** How far an in-flight streamed import is, `{done,total}`, or null when none is in flight. */
+export function importProgress() {
+  const meta = readMeta();
+  return meta ? { done: (meta.cursor && Number(meta.cursor.done)) || 0, total: Number(meta.total) || 0 } : null;
 }
 
 async function open() {
