@@ -12,6 +12,12 @@ const DICT = {
   setupImport: { es: "Importando el catálogo de Movie+…", en: "Importing the Movie+ catalog…" },
   setupNeeds: { es: "Movie+ necesita descargar su catálogo", en: "Movie+ needs to download its catalog" },
   setupImportFailed: { es: "No se pudo importar el catálogo, reintenta", en: "Could not import the catalog, try again" },
+  // The vault's refusals while activating (kino.vault.get): what the person can do about each.
+  vaultNoTelegram: { es: "Valida tu Telegram en Kino para activar Movie+", en: "Validate your Telegram in Kino to activate Movie+" },
+  vaultNotMember: { es: "Movie+ es para los miembros del grupo de Kino", en: "Movie+ is for members of the Kino group" },
+  vaultNotFound: { es: "Movie+ no está disponible ahora mismo", en: "Movie+ is not available right now" },
+  vaultBusy: { es: "Demasiadas solicitudes a Movie+; intenta en un momento", en: "Too many requests to Movie+; try again in a moment" },
+  vaultFailed: { es: "No se pudo activar Movie+, revisa tu conexión y reintenta", en: "Could not activate Movie+, check your connection and try again" },
   setupDownloadFailed: { es: "No se pudo descargar el catálogo, revisa tu conexión y reintenta", en: "Could not download the catalog, check your connection and try again" },
 };
 

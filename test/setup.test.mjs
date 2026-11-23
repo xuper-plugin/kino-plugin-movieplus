@@ -129,7 +129,7 @@ test("setupRun resumes after a restart: the cursor lives in kino.storage", async
 
 test("setupRun: a vault refusal is a step error with a label", async () => {
   vaultAnswer = new KinoError("not_member", "no");
-  await assert.rejects(() => plugin.setupRun({ step: 0 }), (e) => e.code === "not_member" && /Movie\+/.test(e.message));
+  await assert.rejects(() => plugin.setupRun({ step: 0 }), (e) => e.code === "not_member" && /Movie\+/.test(e.userMessage || ""));
   assert.equal(rows.size, 0);
 });
 

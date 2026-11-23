@@ -717,6 +717,36 @@ function getIdentity() {
   return identity;
 }
 
+// src/i18n.js
+var DICT = {
+  catalogReady: { es: "{n} t\xEDtulos disponibles", en: "{n} titles available" },
+  catalogPending: { es: "{n} t\xEDtulos; hay una actualizaci\xF3n pendiente, se aplica al abrir Movie+", en: "{n} titles; an update is pending, it applies when you open Movie+" },
+  catalogEmpty: { es: "A\xFAn no descargado; abre Movie+ para descargarlo", en: "Not downloaded yet; open Movie+ to download it" },
+  // Plugin setup (apiVersion 30): the lines Kino shows while it sets Movie+ up, and the sentences of a failed step
+  // (kino.error's userMessage; Kino shows only a plain sentence, so no "+" nor URL in those).
+  setupRecipe: { es: "Activando Movie+\u2026", en: "Activating Movie+\u2026" },
+  setupDownload: { es: "Descargando el cat\xE1logo de Movie+\u2026", en: "Downloading the Movie+ catalog\u2026" },
+  setupImport: { es: "Importando el cat\xE1logo de Movie+\u2026", en: "Importing the Movie+ catalog\u2026" },
+  setupNeeds: { es: "Movie+ necesita descargar su cat\xE1logo", en: "Movie+ needs to download its catalog" },
+  setupImportFailed: { es: "No se pudo importar el cat\xE1logo, reintenta", en: "Could not import the catalog, try again" },
+  // The vault's refusals while activating (kino.vault.get): what the person can do about each.
+  vaultNoTelegram: { es: "Valida tu Telegram en Kino para activar Movie+", en: "Validate your Telegram in Kino to activate Movie+" },
+  vaultNotMember: { es: "Movie+ es para los miembros del grupo de Kino", en: "Movie+ is for members of the Kino group" },
+  vaultNotFound: { es: "Movie+ no est\xE1 disponible ahora mismo", en: "Movie+ is not available right now" },
+  vaultBusy: { es: "Demasiadas solicitudes a Movie+; intenta en un momento", en: "Too many requests to Movie+; try again in a moment" },
+  vaultFailed: { es: "No se pudo activar Movie+, revisa tu conexi\xF3n y reintenta", en: "Could not activate Movie+, check your connection and try again" },
+  setupDownloadFailed: { es: "No se pudo descargar el cat\xE1logo, revisa tu conexi\xF3n y reintenta", en: "Could not download the catalog, check your connection and try again" }
+};
+function kinoLang(kino = globalThis.kino) {
+  return String(kino && kino.lang || "es").slice(0, 2).toLowerCase() === "en" ? "en" : "es";
+}
+function t(key, lang = "es", params = {}) {
+  const entry = DICT[key];
+  if (!entry) return key;
+  const text2 = entry[lang] || entry.es;
+  return text2.replace(/\{(\w+)\}/g, (m, name) => name in params ? String(params[name]) : m);
+}
+
 // src/movp/vault.js
 var RECIPE_KEY = "movp:recipe:v1";
 var SEEN_KEY = "movp:recipe:seen:v1";
@@ -771,10 +801,12 @@ async function ensureRecipe() {
       k.log && k.log("Movie+ vault: kino.vault.get threw code=" + code);
     } catch (_) {
     }
-    if (code === "not_member") throw k.error("not_member", "Movie+ es para los miembros del grupo de Kino.");
-    if (code === "not_found") throw k.error("unavailable", "Movie+ no est\xE1 disponible ahora mismo.");
-    if (code === "rate_limited") throw k.error("rate_limited", "Demasiadas solicitudes a Movie+; intenta en un momento.");
-    throw k.error("unavailable", "No se pudo activar Movie+. Revisa tu conexi\xF3n y reintenta.");
+    const say = (key) => ({ userMessage: t(key, kinoLang(k)) });
+    if (code === "not_available") throw k.error("unavailable", "kino.vault: this device has no Telegram validation", say("vaultNoTelegram"));
+    if (code === "not_member") throw k.error("not_member", "kino.vault: not a member of the Kino group", say("vaultNotMember"));
+    if (code === "not_found") throw k.error("unavailable", "kino.vault: no secret for Movie+", say("vaultNotFound"));
+    if (code === "rate_limited") throw k.error("rate_limited", "kino.vault: rate limited", say("vaultBusy"));
+    throw k.error("unavailable", "kino.vault failed: " + code, say("vaultFailed"));
   }
   if (!valid(r)) throw k.error("unavailable", "the Movie+ recipe from the vault is invalid");
   try {
@@ -1253,30 +1285,6 @@ async function resolve(ref) {
   }
   const alternatives = variants.filter((v) => v.quality !== chosen.quality).sort((a, b) => qualityRank(b.quality) - qualityRank(a.quality)).map((v) => ({ label: labelOf(v), ref: `${p.base}#${v.quality}` }));
   return { url, label: labelOf(chosen), ...alternatives.length ? { alternatives } : {} };
-}
-
-// src/i18n.js
-var DICT = {
-  catalogReady: { es: "{n} t\xEDtulos disponibles", en: "{n} titles available" },
-  catalogPending: { es: "{n} t\xEDtulos; hay una actualizaci\xF3n pendiente, se aplica al abrir Movie+", en: "{n} titles; an update is pending, it applies when you open Movie+" },
-  catalogEmpty: { es: "A\xFAn no descargado; abre Movie+ para descargarlo", en: "Not downloaded yet; open Movie+ to download it" },
-  // Plugin setup (apiVersion 30): the lines Kino shows while it sets Movie+ up, and the sentences of a failed step
-  // (kino.error's userMessage; Kino shows only a plain sentence, so no "+" nor URL in those).
-  setupRecipe: { es: "Activando Movie+\u2026", en: "Activating Movie+\u2026" },
-  setupDownload: { es: "Descargando el cat\xE1logo de Movie+\u2026", en: "Downloading the Movie+ catalog\u2026" },
-  setupImport: { es: "Importando el cat\xE1logo de Movie+\u2026", en: "Importing the Movie+ catalog\u2026" },
-  setupNeeds: { es: "Movie+ necesita descargar su cat\xE1logo", en: "Movie+ needs to download its catalog" },
-  setupImportFailed: { es: "No se pudo importar el cat\xE1logo, reintenta", en: "Could not import the catalog, try again" },
-  setupDownloadFailed: { es: "No se pudo descargar el cat\xE1logo, revisa tu conexi\xF3n y reintenta", en: "Could not download the catalog, check your connection and try again" }
-};
-function kinoLang(kino = globalThis.kino) {
-  return String(kino && kino.lang || "es").slice(0, 2).toLowerCase() === "en" ? "en" : "es";
-}
-function t(key, lang = "es", params = {}) {
-  const entry = DICT[key];
-  if (!entry) return key;
-  const text2 = entry[lang] || entry.es;
-  return text2.replace(/\{(\w+)\}/g, (m, name) => name in params ? String(params[name]) : m);
 }
 
 // src/movp/refresh.js

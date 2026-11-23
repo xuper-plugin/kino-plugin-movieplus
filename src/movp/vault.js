@@ -1,3 +1,4 @@
+import { t, kinoLang } from "../i18n.js";
 // The Movie+ "recipe" — the appsxploit API base, version/channel params and request-signing prefixes the plugin needs to
 // make valid backend requests — lives in the Kino secrets vault (oleada), NOT hardcoded here. The plugin reads it with ONE
 // call, kino.vault.get() (apiVersion 28, capability "vault", which requires "identity"): Kino runs the whole exchange from
@@ -73,10 +74,13 @@ export async function ensureRecipe() {
   } catch (e) {
     const code = (e && e.code) || "unavailable";
     try { k.log && k.log("Movie+ vault: kino.vault.get threw code=" + code); } catch (_) {}
-    if (code === "not_member") throw k.error("not_member", "Movie+ es para los miembros del grupo de Kino.");
-    if (code === "not_found") throw k.error("unavailable", "Movie+ no está disponible ahora mismo.");
-    if (code === "rate_limited") throw k.error("rate_limited", "Demasiadas solicitudes a Movie+; intenta en un momento.");
-    throw k.error("unavailable", "No se pudo activar Movie+. Revisa tu conexión y reintenta.");
+    // Each refusal carries the person's sentence (userMessage): Kino's setup sheet and Movie+'s gate show it.
+    const say = (key) => ({ userMessage: t(key, kinoLang(k)) });
+    if (code === "not_available") throw k.error("unavailable", "kino.vault: this device has no Telegram validation", say("vaultNoTelegram"));
+    if (code === "not_member") throw k.error("not_member", "kino.vault: not a member of the Kino group", say("vaultNotMember"));
+    if (code === "not_found") throw k.error("unavailable", "kino.vault: no secret for Movie+", say("vaultNotFound"));
+    if (code === "rate_limited") throw k.error("rate_limited", "kino.vault: rate limited", say("vaultBusy"));
+    throw k.error("unavailable", "kino.vault failed: " + code, say("vaultFailed"));
   }
   if (!valid(r)) throw k.error("unavailable", "the Movie+ recipe from the vault is invalid");
   try { k.storage.set(RECIPE_KEY, JSON.stringify({ at: Date.now(), recipe: r })); } catch (_) { /* storage full: next open re-mints */ }
