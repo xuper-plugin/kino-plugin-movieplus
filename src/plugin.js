@@ -2,6 +2,11 @@
 // check in movp/refresh.js; section is still a stub.
 
 export { home, search, browse, details, episodes, resolve } from "./contract/index.js";
+import { search as catalogSearch } from "./contract/index.js";
+import { catalogDoor } from "./door.js";
+
+/** The catalog door (Kino's plugin protocol): Da-Video and the author's other plugins find Movie+'s titles through it. */
+export const proto_catalog_search = catalogDoor(catalogSearch);
 export { screen, screenEvent } from "./screen/index.js";
 export { setupStatus, setupRun } from "./setup.js";
 

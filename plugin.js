@@ -1287,6 +1287,40 @@ async function resolve(ref) {
   return { url, label: labelOf(chosen), ...alternatives.length ? { alternatives } : {} };
 }
 
+// src/door.js
+var CATALOG_MAX = 40;
+var OVERVIEW_MAX = 300;
+var HTTPS = /^https:\/\//;
+function catalogItems(found) {
+  const out = [];
+  const list = Array.isArray(found) ? found : found && Array.isArray(found.items) ? found.items : [];
+  for (const it of list) {
+    if (out.length >= CATALOG_MAX) break;
+    if (!it || typeof it.id !== "string" || !it.id || typeof it.ref !== "string" || !it.ref || typeof it.title !== "string" || !it.title) continue;
+    const item = { id: it.id, ref: it.ref, title: it.title, kind: typeof it.kind === "string" && it.kind ? it.kind : "movie" };
+    if (typeof it.poster === "string" && HTTPS.test(it.poster)) item.poster = it.poster;
+    if (typeof it.backdrop === "string" && HTTPS.test(it.backdrop)) item.backdrop = it.backdrop;
+    if (it.year !== void 0 && it.year !== null && String(it.year)) item.year = String(it.year);
+    if (typeof it.overview === "string" && it.overview.trim()) item.overview = it.overview.trim().slice(0, OVERVIEW_MAX);
+    const tmdb2 = it.ids && Number.isInteger(it.ids.tmdb) ? it.ids.tmdb : Number.isInteger(it.tmdb) ? it.tmdb : 0;
+    if (tmdb2 > 0) item.tmdb = tmdb2;
+    out.push(item);
+  }
+  return out;
+}
+function catalogQuery(arg) {
+  const q = String(arg && arg.q || "").trim().slice(0, 200);
+  const type = arg && (arg.type === "movie" || arg.type === "series") ? arg.type : "any";
+  return { q, type, season: 0, episode: 0, tmdbId: 0, year: 0, originalTitle: "", altTitles: [], cursor: null };
+}
+function catalogDoor(search2) {
+  return async (arg) => {
+    const query = catalogQuery(arg);
+    if (!query.q) return [];
+    return catalogItems(await search2(query));
+  };
+}
+
 // src/movp/refresh.js
 var REMOTE_KEY = "movp:catalog:remote:v1";
 var PENDING_KEY = "movp:catalog:pending:v1";
@@ -1537,7 +1571,7 @@ var MAX = 150;
 var POOL = 8;
 var SLIDES = 5;
 var BUDGET_MS = 6e3;
-var HTTPS = /^https:\/\//;
+var HTTPS2 = /^https:\/\//;
 var getKino9 = () => globalThis.kino;
 function read() {
   try {
@@ -1590,8 +1624,8 @@ async function heroSlides(cards) {
         continue;
       }
     }
-    if (e && HTTPS.test(e.b || "")) {
-      out.push({ id: c.id, ref: c.ref, kind: c.kind, title: c.title, image: e.b, ...e.l && HTTPS.test(e.l) ? { logo: e.l } : {} });
+    if (e && HTTPS2.test(e.b || "")) {
+      out.push({ id: c.id, ref: c.ref, kind: c.kind, title: c.title, image: e.b, ...e.l && HTTPS2.test(e.l) ? { logo: e.l } : {} });
     }
   }
   if (dirty) write(book);
@@ -1856,6 +1890,7 @@ async function setupRun(_args) {
 }
 
 // src/plugin.js
+var proto_catalog_search = catalogDoor(search);
 async function section() {
   return { items: [] };
 }
@@ -1876,6 +1911,7 @@ export {
   episodes,
   home,
   job,
+  proto_catalog_search,
   resolve,
   screen,
   screenEvent,
