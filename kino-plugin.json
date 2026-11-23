@@ -1,7 +1,7 @@
 {
   "id": "movieplus",
   "name": "Movie+",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "apiVersion": 28,
   "enhancements": {
     "30": {
@@ -131,6 +131,6 @@
   ],
   "signature": {
     "authorKey": "6693946bd5c56196960959c4b9665fad5094374bcb85ddb282f8bf762c835263",
-    "value": "69a217e6b1833ccc611cf0b2703329ac70cfbf0372a970a4a449ce3494f7482897862f520f1054d0e4ed796931ddecc48fc76c83a4e03fbbbdadc97f31a71105"
+    "value": "30a199c5ea133f0432f26cfeb5cd247136f211bb705a7b94bcaf016fac8ce321658120ca2fd1fd39e421bb0baf90d42c55c6657af10475c1a4cf5d8dcb04290d"
   }
 }

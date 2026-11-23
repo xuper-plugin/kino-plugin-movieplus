@@ -1405,7 +1405,7 @@ function gateView(state) {
       title: TITLE,
       mergeWithKinoBar: true,
       dense: true,
-      leading: { type: "IconButton", icon: "close", onPressed: "close_screen", labelText: "Cerrar", labelTextEn: "Close" }
+      leading: { type: "IconButton", icon: "arrow_back", onPressed: "close_screen", labelText: "Atr\xE1s", labelTextEn: "Back" }
     },
     body: { type: "Column", mainAxisAlignment: "center", crossAxisAlignment: "center", padding: 24, gap: 16, children }
   };
@@ -1630,7 +1630,7 @@ function appBar(searching) {
     title: TITLE2,
     mergeWithKinoBar: true,
     dense: true,
-    leading: { type: "IconButton", icon: "close", onPressed: "close_screen", labelText: "Cerrar", labelTextEn: "Close" },
+    leading: { type: "IconButton", icon: "arrow_back", onPressed: "close_screen", labelText: "Atr\xE1s", labelTextEn: "Back" },
     actions: [
       { type: "IconButton", icon: "search", onPressed: "open_search", labelText: "Buscar", labelTextEn: "Search" },
       { type: "IconButton", icon: "refresh", onPressed: "refresh", labelText: "Actualizar", labelTextEn: "Refresh" },

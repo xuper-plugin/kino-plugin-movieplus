@@ -74,7 +74,7 @@ test("richView normal: Movie+ AppBar with close and search/refresh/settings acti
   assert.equal(v.appBar.title, "Movie+");
   assert.equal(v.appBar.mergeWithKinoBar, true);
   assert.equal(v.appBar.dense, true);
-  assert.deepEqual(v.appBar.leading, { type: "IconButton", icon: "close", onPressed: "close_screen", labelText: "Cerrar", labelTextEn: "Close" });
+  assert.deepEqual(v.appBar.leading, { type: "IconButton", icon: "arrow_back", onPressed: "close_screen", labelText: "Atrás", labelTextEn: "Back" });
   assert.deepEqual(v.appBar.actions.map((a) => [a.icon, a.onPressed]), [["search", "open_search"], ["refresh", "refresh"], ["settings", "open_settings"]]);
 });
 
