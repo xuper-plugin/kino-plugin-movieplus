@@ -76,7 +76,9 @@ export async function screenEvent(ev) {
         const code = e && e.code;
         if (code === "not_member") return { state: { ready: true, members: true, verifyFailed: false, downloading: false, importing: false, empty: false } };
         // offline / rate limit / identity error: a retry gate, NOT a silent catalog download
-        return { state: { ready: true, verifyFailed: true, members: false } };
+        // The vault says why (its userMessage, already in the person's language): "Valida tu Telegram…" beats a generic line.
+        const why = e && typeof e.userMessage === "string" && e.userMessage ? e.userMessage : null;
+        return { state: { ready: true, verifyFailed: true, verifyWhy: why, members: false } };
       }
       // Step 2: access verified → the catalog gate (download/import).
       const base = { ...state, ...clear };

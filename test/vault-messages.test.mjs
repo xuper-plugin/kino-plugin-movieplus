@@ -26,3 +26,14 @@ for (const [code, es, en] of [
     }
   });
 }
+
+test("the screen's access gate shows the vault's reason (no Telegram) instead of the generic line", async () => {
+  globalThis.kino = fakeKino("not_available", "es-CO");
+  const { screen, screenEvent } = await import("../src/plugin.js?gate-why");
+  const a = await screenEvent({ name: "open", state: {} });
+  assert.equal(a.state.verifyFailed, true);
+  assert.match(a.state.verifyWhy, /Valida tu Telegram en Kino/);
+  const text = JSON.stringify(await screen({ state: a.state }));
+  assert.match(text, /Valida tu Telegram en Kino/);
+  assert.doesNotMatch(text, /No se pudo verificar tu acceso/);
+});

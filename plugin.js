@@ -1372,7 +1372,8 @@ function gateView(state) {
     });
     children.push({ type: "TextButton", labelText: "Ya me un\xED, reintentar", labelTextEn: "I joined \u2014 retry", onPressed: "verify" });
   } else if (s.verifyFailed) {
-    children.push({
+    if (s.verifyWhy) children.push({ type: "Text", text: String(s.verifyWhy), style: "p" });
+    else children.push({
       type: "Text",
       text: "No se pudo verificar tu acceso. Revisa tu conexi\xF3n y reintenta.",
       textEn: "Could not verify your access. Check your connection and try again.",
@@ -1769,7 +1770,8 @@ async function screenEvent(ev) {
       } catch (e) {
         const code = e && e.code;
         if (code === "not_member") return { state: { ready: true, members: true, verifyFailed: false, downloading: false, importing: false, empty: false } };
-        return { state: { ready: true, verifyFailed: true, members: false } };
+        const why = e && typeof e.userMessage === "string" && e.userMessage ? e.userMessage : null;
+        return { state: { ready: true, verifyFailed: true, verifyWhy: why, members: false } };
       }
       const base = { ...state, ...clear };
       const answer = await handleGateEvent("open", value, base);

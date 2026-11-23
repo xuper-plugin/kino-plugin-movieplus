@@ -44,7 +44,9 @@ export function gateView(state) {
       onPressed: { go: { url: { href: "https://t.me/Kinoapptv", title: "Grupo de Kino" } } } });
     children.push({ type: "TextButton", labelText: "Ya me uní, reintentar", labelTextEn: "I joined — retry", onPressed: "verify" });
   } else if (s.verifyFailed) {
-    children.push({ type: "Text", text: "No se pudo verificar tu acceso. Revisa tu conexión y reintenta.",
+    // The vault's own reason when it gave one (already localized), else the generic line.
+    if (s.verifyWhy) children.push({ type: "Text", text: String(s.verifyWhy), style: "p" });
+    else children.push({ type: "Text", text: "No se pudo verificar tu acceso. Revisa tu conexión y reintenta.",
       textEn: "Could not verify your access. Check your connection and try again.", style: "p" });
     children.push({ type: "ElevatedButton", icon: "refresh", labelText: "Reintentar", labelTextEn: "Retry", onPressed: "verify" });
   } else if (phase === "loading") {
