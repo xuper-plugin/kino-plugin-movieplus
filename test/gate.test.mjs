@@ -7,6 +7,14 @@ const sampleGz = readFileSync(new URL("./fixtures/items-sample.json.gz", import.
 const sample = JSON.parse(gunzipSync(sampleGz).toString("utf8"));
 const SAMPLE_TOTAL = sample.items.length;
 const { lightGz } = await import("./light.mjs");
+const { IMPORT_BUDGET_MS } = await import("../src/screen/gate.js");
+
+/** Run `fn` with kino.catalog.upsert taking a whole tick budget, so each import tick lands exactly one batch. */
+async function slowDevice(fn) {
+  const orig = globalThis.kino.catalog.upsert;
+  globalThis.kino.catalog.upsert = async (items) => { await new Promise((r) => setTimeout(r, IMPORT_BUDGET_MS)); return orig(items); };
+  try { return await fn(); } finally { globalThis.kino.catalog.upsert = orig; }
+}
 
 const store = new Map();
 const rows = new Map();
@@ -156,7 +164,7 @@ test("the raw catalog is split so no storage value passes the per-value cap", as
   const chunks = [...store.keys()].filter((k) => k.startsWith("movp:gate:raw:"));
   assert.ok(chunks.length >= 4);
   for (const v of store.values()) assert.ok(Buffer.byteLength(v) <= 1200000);
-  const t = await handleGateEvent("importTick", null, { importing: true, cursor: 0, total: r.state.total });
+  const t = await slowDevice(() => handleGateEvent("importTick", null, { importing: true, cursor: 0, total: r.state.total }));
   assert.equal(t.state.cursor, 500);
   assert.equal(rows.get("m:7").title, "Título 6");
 });
@@ -195,9 +203,9 @@ test("importTick imports in several batches when the catalog is bigger than a ba
   fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
   const f = await handleGateEvent("fetchCatalog", null, {});
   assert.equal(f.state.total, 1200);
-  const r1 = await handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 });
+  const r1 = await slowDevice(() => handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 }));
   assert.equal(r1.state.ready, undefined);
-  assert.ok(r1.state.cursor > 0 && r1.state.cursor < 1200);
+  assert.equal(r1.state.cursor, 500);
   assert.equal(r1.state.total, 1200);
   let r = r1;
   while (!r.state.ready) r = await handleGateEvent("importTick", null, { importing: true, ...r.state });
@@ -208,9 +216,49 @@ test("open resumes an import that was in flight", async () => {
   const many = { movies: Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "t" + i, date: "2024-01-01" })), series: [] };
   fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
   await handleGateEvent("fetchCatalog", null, {});
-  const r1 = await handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 });
+  const r1 = await slowDevice(() => handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 }));
   const o = await handleGateEvent("open", null, {});
   assert.deepEqual(o, { state: { ready: true, importing: true, cursor: r1.state.cursor, total: 1200 } });
+});
+
+test("a fast device imports several batches in one tick", async () => {
+  const many = { movies: Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "t" + i, date: "2024-01-01" })), series: [] };
+  fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
+  await handleGateEvent("fetchCatalog", null, {});
+  const r = await handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 });
+  assert.equal(r.state.ready, true);
+  assert.equal(rows.size, 1200);
+});
+
+test("after the download, import ticks never read the stored chunks again", async () => {
+  const many = { movies: Array.from({ length: 1500 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "t" + i, date: "2024-01-01" })), series: [] };
+  fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
+  await handleGateEvent("fetchCatalog", null, {});
+  const get = globalThis.kino.storage.get;
+  let chunkReads = 0;
+  globalThis.kino.storage.get = (k) => { if (k.startsWith("movp:gate:raw:")) chunkReads++; return get(k); };
+  try {
+    let r = { state: { importing: true } };
+    await slowDevice(async () => { while (!r.state.ready) r = await handleGateEvent("importTick", null, { importing: true, ...r.state }); });
+    assert.equal(rows.size, 1500);
+  } finally {
+    globalThis.kino.storage.get = get;
+  }
+  assert.equal(chunkReads, 0);
+});
+
+test("an import resumed after Kino restarted the plugin reads the stored chunks and finishes", async () => {
+  const many = { movies: Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "t" + i, date: "2024-01-01" })), series: [] };
+  fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
+  await handleGateEvent("fetchCatalog", null, {});
+  await slowDevice(() => handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 }));
+  // A restart loses the in-memory copy: the stored meta now names a download this process never kept.
+  const meta = JSON.parse(store.get("movp:gate:meta"));
+  store.set("movp:gate:meta", JSON.stringify({ ...meta, dl: "from-before-the-restart" }));
+  let r = { state: { importing: true } };
+  while (!r.state.ready) r = await handleGateEvent("importTick", null, { importing: true, ...r.state });
+  assert.equal(r.state.imported, true);
+  assert.equal(rows.size, 1200);
 });
 
 test("importTick with nothing stored and no finished import falls back to the button", async () => {

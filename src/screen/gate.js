@@ -8,6 +8,9 @@ import { clearRefreshPending, recordRemote, refreshPending, remoteSignature } fr
 const TITLE = "Movie+";
 const TICK_MS = 1000;
 const IMPORT_BATCH = 500;
+// One import tick keeps importing batches (each a separate kino.catalog.upsert of at most 500) until this much time has
+// gone by, so a fast device finishes in a few ticks while a slow one still answers well within a tick.
+export const IMPORT_BUDGET_MS = 700;
 // The raw catalog (~2.6 MB) lives in kino.storage (storageLarge: 16 MiB total, 2 MiB per value) between ticks, in pieces.
 const CHUNK_CHARS = 400000;
 const META_KEY = "movp:gate:meta";
@@ -101,7 +104,12 @@ function writeMeta(meta) {
   getKino().storage.set(META_KEY, JSON.stringify(meta));
 }
 
+// The raw text of the download being imported, kept in memory between ticks so a tick does not read and join the
+// stored chunks again. `id` is the download's own mark (meta.dl); the stored copy stays the source after a restart.
+let rawCache = null;
+
 function clearRaw() {
+  rawCache = null;
   const st = getKino().storage;
   const meta = readStoredMeta();
   if (meta) for (let i = 0; i < meta.chunks; i++) st.remove(CHUNK_KEY + i);
@@ -125,24 +133,32 @@ function chunkText(text) {
 function storeRaw(text, total, remote) {
   clearRaw();
   const chunks = chunkText(text);
+  const dl = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   try {
     chunks.forEach((c, i) => getKino().storage.set(CHUNK_KEY + i, c));
-    writeMeta({ fmt: CATALOG_FORMAT, chunks: chunks.length, total, cursor: { off: -1, done: 0, recent: null }, remote });
+    writeMeta({ fmt: CATALOG_FORMAT, dl, chunks: chunks.length, total, cursor: { off: -1, done: 0, recent: null }, remote });
+    rawCache = { id: dl, text };
   } catch (err) {
     for (let i = 0; i < chunks.length; i++) getKino().storage.remove(CHUNK_KEY + i);
     throw err;
   }
 }
 
-/** The stored raw catalog text (the chunks joined — no JSON.parse), or null if a chunk is missing. */
+/**
+ * The raw catalog text of the import `meta` describes: the in-memory copy when it is that same download, else the stored
+ * chunks joined (no JSON.parse) and kept in memory for the next ticks; null if a chunk is missing.
+ */
 function loadRaw(meta) {
+  if (rawCache && meta.dl && rawCache.id === meta.dl) return rawCache.text;
   const parts = [];
   for (let i = 0; i < meta.chunks; i++) {
     const c = getKino().storage.get(CHUNK_KEY + i);
     if (c == null) return null;
     parts.push(c);
   }
-  return parts.join("");
+  const text = parts.join("");
+  rawCache = meta.dl ? { id: meta.dl, text } : null;
+  return text;
 }
 
 /** How far an in-flight streamed import is, `{done,total}`, or null when none is in flight. */
@@ -183,7 +199,9 @@ async function importStep() {
     return { state: { importing: false, ready: true, empty: true } };
   }
   try {
-    const next = await importTextTick(text, meta.cursor, IMPORT_BATCH);
+    const t0 = Date.now();
+    let next = await importTextTick(text, meta.cursor, IMPORT_BATCH);
+    while (!next.finished && Date.now() - t0 < IMPORT_BUDGET_MS) next = await importTextTick(text, next, IMPORT_BATCH);
     const total = Number(meta.total) || next.done;
     try { getKino().log && getKino().log(`Movie+ import tick: ${next.done}/${total}${next.finished ? " (finished)" : ""}`); } catch (_) {}
     if (next.finished) {

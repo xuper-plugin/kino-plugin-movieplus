@@ -1362,6 +1362,7 @@ function catalogStatusText(count, lang) {
 var TITLE = "Movie+";
 var TICK_MS = 1e3;
 var IMPORT_BATCH = 500;
+var IMPORT_BUDGET_MS = 700;
 var CHUNK_CHARS = 4e5;
 var META_KEY = "movp:gate:meta";
 var CHUNK_KEY = "movp:gate:raw:";
@@ -1454,7 +1455,9 @@ function readMeta() {
 function writeMeta(meta) {
   getKino8().storage.set(META_KEY, JSON.stringify(meta));
 }
+var rawCache = null;
 function clearRaw() {
+  rawCache = null;
   const st = getKino8().storage;
   const meta = readStoredMeta();
   if (meta) for (let i = 0; i < meta.chunks; i++) st.remove(CHUNK_KEY + i);
@@ -1474,22 +1477,27 @@ function chunkText(text2) {
 function storeRaw(text2, total, remote) {
   clearRaw();
   const chunks = chunkText(text2);
+  const dl = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   try {
     chunks.forEach((c, i) => getKino8().storage.set(CHUNK_KEY + i, c));
-    writeMeta({ fmt: CATALOG_FORMAT, chunks: chunks.length, total, cursor: { off: -1, done: 0, recent: null }, remote });
+    writeMeta({ fmt: CATALOG_FORMAT, dl, chunks: chunks.length, total, cursor: { off: -1, done: 0, recent: null }, remote });
+    rawCache = { id: dl, text: text2 };
   } catch (err) {
     for (let i = 0; i < chunks.length; i++) getKino8().storage.remove(CHUNK_KEY + i);
     throw err;
   }
 }
 function loadRaw(meta) {
+  if (rawCache && meta.dl && rawCache.id === meta.dl) return rawCache.text;
   const parts = [];
   for (let i = 0; i < meta.chunks; i++) {
     const c = getKino8().storage.get(CHUNK_KEY + i);
     if (c == null) return null;
     parts.push(c);
   }
-  return parts.join("");
+  const text2 = parts.join("");
+  rawCache = meta.dl ? { id: meta.dl, text: text2 } : null;
+  return text2;
 }
 function importProgress() {
   const meta = readMeta();
@@ -1528,7 +1536,9 @@ async function importStep() {
     return { state: { importing: false, ready: true, empty: true } };
   }
   try {
-    const next = await importTextTick(text2, meta.cursor, IMPORT_BATCH);
+    const t0 = Date.now();
+    let next = await importTextTick(text2, meta.cursor, IMPORT_BATCH);
+    while (!next.finished && Date.now() - t0 < IMPORT_BUDGET_MS) next = await importTextTick(text2, next, IMPORT_BATCH);
     const total = Number(meta.total) || next.done;
     try {
       getKino8().log && getKino8().log(`Movie+ import tick: ${next.done}/${total}${next.finished ? " (finished)" : ""}`);
