@@ -2,13 +2,13 @@
 // idle (a Download button), downloading (indeterminate bar + a tick that fetches) and importing (determinate bar + a
 // tick that imports one batch). The same steps back the plugin setup (src/setup.js, route "setup"). The screen composes gateView/handleGateEvent with the rich view.
 
-import { catalogCount, isCatalogReady, fetchCatalogText, countItemsText, importTextTick, finishImport } from "../movp/catalog.js";
+import { CATALOG_FORMAT, catalogCount, isCatalogReady, fetchCatalogText, countItemsText, importTextTick, finishImport } from "../movp/catalog.js";
 import { clearRefreshPending, recordRemote, refreshPending, remoteSignature } from "../movp/refresh.js";
 
 const TITLE = "Movie+";
 const TICK_MS = 1000;
 const IMPORT_BATCH = 500;
-// The raw catalog (~9.4 MB) lives in kino.storage (storageLarge: 16 MiB total, 2 MiB per value) between ticks, in pieces.
+// The raw catalog (~2.6 MB) lives in kino.storage (storageLarge: 16 MiB total, 2 MiB per value) between ticks, in pieces.
 const CHUNK_CHARS = 400000;
 const META_KEY = "movp:gate:meta";
 const CHUNK_KEY = "movp:gate:raw:";
@@ -78,7 +78,7 @@ export function gateView(state) {
   return tick ? { ...tree, every: [{ ms: TICK_MS, event: tick }] } : tree;
 }
 
-function readMeta() {
+function readStoredMeta() {
   try {
     const m = JSON.parse(getKino().storage.get(META_KEY) || "null");
     return m && Number.isInteger(m.chunks) && m.chunks > 0 ? m : null;
@@ -87,13 +87,23 @@ function readMeta() {
   }
 }
 
+/** The in-flight import's meta; one of another catalog format (an import left half-way by an older version) is dropped. */
+function readMeta() {
+  const m = readStoredMeta();
+  if (m && m.fmt !== CATALOG_FORMAT) {
+    clearRaw();
+    return null;
+  }
+  return m;
+}
+
 function writeMeta(meta) {
   getKino().storage.set(META_KEY, JSON.stringify(meta));
 }
 
 function clearRaw() {
   const st = getKino().storage;
-  const meta = readMeta();
+  const meta = readStoredMeta();
   if (meta) for (let i = 0; i < meta.chunks; i++) st.remove(CHUNK_KEY + i);
   st.remove(META_KEY);
 }
@@ -117,7 +127,7 @@ function storeRaw(text, total, remote) {
   const chunks = chunkText(text);
   try {
     chunks.forEach((c, i) => getKino().storage.set(CHUNK_KEY + i, c));
-    writeMeta({ chunks: chunks.length, total, cursor: { si: 0, off: -1, done: 0, recent: null }, remote });
+    writeMeta({ fmt: CATALOG_FORMAT, chunks: chunks.length, total, cursor: { off: -1, done: 0, recent: null }, remote });
   } catch (err) {
     for (let i = 0; i < chunks.length; i++) getKino().storage.remove(CHUNK_KEY + i);
     throw err;
@@ -183,7 +193,7 @@ async function importStep() {
       await recordRemote(meta.remote);
       return { state: { importing: false, ready: true, empty: false, imported: true, cursor: total, total } };
     }
-    writeMeta({ ...meta, cursor: { si: next.si, off: next.off, done: next.done, recent: next.recent } });
+    writeMeta({ ...meta, cursor: { off: next.off, done: next.done, recent: next.recent } });
     return { state: { cursor: next.done, total } };
   } catch (_) {
     clearRaw();

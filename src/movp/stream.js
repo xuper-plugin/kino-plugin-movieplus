@@ -3,9 +3,9 @@
 // (a SIGSEGV that kills the whole app — measured on a Redmi Note 9 Pro). Here we find each array and hand back its
 // elements as small JSON snippets, parsed one small batch at a time, so the parser never recurses deep.
 //
-// Scope: the Movie+ catalog is `{ "series":[ {..}, .. ], "movies":[ {..}, .. ], .. }` — a root object whose `movies`
-// and `series` are arrays of flat objects. The scanner tracks strings, escapes and nested {}/[], so element objects
-// with their own arrays (e.g. `urls`) are handled; it does not need a full JSON grammar.
+// Scope: the light Movie+ catalog is `{ "v":2, .., "items":[ [..], [..], .. ] }` — a root object whose `items` is an
+// array of small rows. The scanner tracks strings, escapes and nested {}/[], so rows with their own arrays or objects
+// are handled; it does not need a full JSON grammar.
 
 /**
  * The offset just inside the array value of the top-level key `key` (one past its `[`), or -1 when absent.

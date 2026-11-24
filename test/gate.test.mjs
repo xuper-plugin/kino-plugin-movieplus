@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 
 const sampleGz = readFileSync(new URL("./fixtures/items-sample.json.gz", import.meta.url));
 const sample = JSON.parse(gunzipSync(sampleGz).toString("utf8"));
-const SAMPLE_TOTAL = sample.movies.length + sample.series.length;
+const SAMPLE_TOTAL = sample.items.length;
+const { lightGz } = await import("./light.mjs");
 
 const store = new Map();
 const rows = new Map();
@@ -147,7 +148,7 @@ test("fetchCatalog fail: back to the button with an error toast", async () => {
 test("the raw catalog is split so no storage value passes the per-value cap", async () => {
   const big = { movies: Array.from({ length: 30000 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "Título " + i, date: "2024-01-01", urlImage: "https://x/" + i + ".jpg" })), series: [] };
   assert.ok(JSON.stringify(big).length > 1500000);
-  fetchHandler = async () => ({ status: 200, bytes: (await import("node:zlib")).gzipSync(JSON.stringify(big)) });
+  fetchHandler = async () => ({ status: 200, bytes: lightGz(big) });
   maxValueBytes = 1200000;
   const r = await handleGateEvent("fetchCatalog", null, {});
   assert.equal(r.state.importing, true);
@@ -191,7 +192,7 @@ test("importTick imports batch by batch until done, then leaves the gate and cle
 
 test("importTick imports in several batches when the catalog is bigger than a batch", async () => {
   const many = { movies: Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "t" + i, date: "2024-01-01" })), series: [] };
-  fetchHandler = async () => ({ status: 200, bytes: (await import("node:zlib")).gzipSync(JSON.stringify(many)) });
+  fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
   const f = await handleGateEvent("fetchCatalog", null, {});
   assert.equal(f.state.total, 1200);
   const r1 = await handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 });
@@ -205,7 +206,7 @@ test("importTick imports in several batches when the catalog is bigger than a ba
 
 test("open resumes an import that was in flight", async () => {
   const many = { movies: Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, type: 1, nameFile: "t" + i, date: "2024-01-01" })), series: [] };
-  fetchHandler = async () => ({ status: 200, bytes: (await import("node:zlib")).gzipSync(JSON.stringify(many)) });
+  fetchHandler = async () => ({ status: 200, bytes: lightGz(many) });
   await handleGateEvent("fetchCatalog", null, {});
   const r1 = await handleGateEvent("importTick", null, { importing: true, cursor: 0, total: 1200 });
   const o = await handleGateEvent("open", null, {});

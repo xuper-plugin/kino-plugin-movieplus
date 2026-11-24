@@ -11,7 +11,7 @@ const manifest = JSON.parse(readFileSync(new URL("kino-plugin.json", root), "utf
 const gz = readFileSync(new URL("test/fixtures/items-sample.json.gz", root));
 
 const fetchImpl = async (url, init = {}) => {
-  if (String(url).includes("items.json.gz")) {
+  if (String(url).includes("items-light.json.gz")) {
     return new Response(init.method === "HEAD" ? null : gz, { status: 200, headers: { etag: '"e2e"', "content-length": String(gz.length) } });
   }
   return new Response("not found", { status: 404 });

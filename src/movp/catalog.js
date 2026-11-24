@@ -1,15 +1,21 @@
-// Movie+ catalog: one gzip JSON (~25k titles) downloaded once and indexed, in resumable batches, into kino.catalog.
+// Movie+ catalog: one small gzip JSON (~25k titles) downloaded once and indexed, in resumable batches, into kino.catalog.
 // kino.fetch / kino.catalog / kino.storage / kino.crypto are read from globalThis.kino at call time, so the module also
 // runs under node --test with a shim.
+//
+// The file is the LIGHT catalog, rebuilt twice a day from Movie+'s own items.json.gz (9.4 MB unzipped) and published on
+// this repo's `data` branch: `{"v":2,"at":..,"n":..,"items":[[tmdbId, type, "date", "title", "poster", "genres"], ..]}`
+// (~2.6 MB unzipped). It fits under kino.crypto.gunzip's 5 MB cap, so a slow TV unzips it natively instead of in JS.
+// It is served from raw.githubusercontent.com, a host this plugin already declares.
 
 import { gunzipBase64ToText } from "./inflate.js";
 import { arrayStart, scanElements, countArray } from "./stream.js";
 
 export const CATALOG_URLS = [
-  "https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items.json.gz",
-  "https://appsdevxp.com/app/db/items.json.gz",
-  "https://developerxploit.com/app/db/items.json.gz",
+  "https://raw.githubusercontent.com/xuper-plugin/kino-plugin-movieplus/data/items-light.json.gz",
 ];
+/** The top-level array of the light catalog; bump CATALOG_FORMAT together with any change of its row layout. */
+const ITEMS_KEY = "items";
+export const CATALOG_FORMAT = 2;
 const FETCH_TIMEOUT_MS = 30000;
 const UPSERT_MAX = 500;
 const RECENT_PER_CATEGORY = 200;
@@ -17,7 +23,6 @@ const SCAN_PAGE = 100;
 const SCAN_MAX_PAGES = 30;
 const BROWSE_SCAN_PAGES = 10;
 const TITLE_MAX = 300;
-const CURSOR_KEY = "movp:catalog:cursor:v1";
 const DONE_KEY = "movp:catalog:v1";
 const RECENT_KEY = "movp:catalog:recent:v1";
 
@@ -38,7 +43,8 @@ export function typeToCategory(type) {
   return cat ? cat.key : null;
 }
 
-// kino.crypto.gunzip refuses output over 5 MB and this catalog unzips to ~10 MB: fall back to a JS inflate.
+// kino.crypto.gunzip handles the light catalog (under its 5 MB cap); the JS inflate is only the fallback for a catalog
+// that one day outgrows the cap, or a Kino without the native call.
 function gunzipText(b64) {
   const k = getKino();
   if (k.crypto && typeof k.crypto.gunzip === "function") {
@@ -58,8 +64,8 @@ function gunzipText(b64) {
 
 /**
  * The raw catalog TEXT from the first working mirror (downloaded + gunzipped, lightly validated). It is NEVER
- * JSON.parse'd whole: QuickJS's JSON.parse recurses once per array element, so the ~25k-item catalog overflows the
- * plugin thread's native stack and SIGSEGVs the whole app. The gate stores this text and imports it in streamed batches
+ * JSON.parse'd whole: QuickJS's JSON.parse recurses once per array element, so a ~25k-item array overflows the plugin
+ * thread's native stack and SIGSEGVs the whole app. The gate stores this text and imports it in streamed batches
  * (importTextTick), so no single parse ever runs over the full catalog.
  */
 export async function fetchCatalogText() {
@@ -70,7 +76,7 @@ export async function fetchCatalogText() {
       const resp = await k.fetch(url, { timeoutMs: FETCH_TIMEOUT_MS });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const text = gunzipText(resp.base64());
-      if (arrayStart(text, "movies") < 0 && arrayStart(text, "series") < 0) throw new Error("unexpected catalog shape");
+      if (arrayStart(text, ITEMS_KEY) < 0) throw new Error("unexpected catalog shape");
       try { k.log && k.log(`Movie+ catalog text ready from ${url}: ${text.length} chars`); } catch (_) {}
       return text;
     } catch (err) {
@@ -81,30 +87,10 @@ export async function fetchCatalogText() {
   throw k.error("unavailable", `Movie+ catalog download failed${lastErr && lastErr.message ? ": " + lastErr.message : ""}`);
 }
 
-/**
- * The whole catalog as `{movies, series}`. Parses the full text in one go, so it is for SMALL catalogs only (the tests,
- * and callers that know the size is bounded); the first-run gate uses fetchCatalogText + importTextTick instead.
- */
-export async function fetchCatalog() {
-  const k = getKino();
-  let cat;
-  try { cat = JSON.parse(await fetchCatalogText()); } catch (err) {
-    if (err && err.code === "unavailable") throw err;
-    throw k.error("unavailable", `Movie+ catalog download failed: ${(err && (err.message || err.code)) || err}`);
-  }
-  if (!cat || (!Array.isArray(cat.movies) && !Array.isArray(cat.series))) throw k.error("unavailable", "unexpected catalog shape");
-  return { movies: cat.movies || [], series: cat.series || [] };
-}
-
-/** The item count of the raw catalog text (movies + series), by a cheap scan (no JSON.parse). */
+/** The item count of the raw catalog text, by a cheap scan (no JSON.parse). */
 export function countItemsText(text) {
-  return countArray(text, "movies") + countArray(text, "series");
+  return countArray(text, ITEMS_KEY);
 }
-
-const STREAM_SPECS = [
-  { key: "movies", kind: "movie", type: 1 },
-  { key: "series", kind: "series", type: 2 },
-];
 
 /** Keep the highest-`s` items: insert into the bounded list, dropping the current minimum when full. */
 function insertTopN(list, item, n) {
@@ -115,50 +101,41 @@ function insertTopN(list, item, n) {
 }
 
 /**
- * Import ONE batch of the raw catalog `text` into kino.catalog, streaming — each element is a small JSON snippet parsed
- * on its own, so the parser never recurses over the whole catalog. `cursor` is serializable and kept between ticks:
- *   { si: STREAM_SPECS index, off: text offset (<0 = that array not started), done: items imported, recent: {catKey:[{id,s}]} }
- * @returns {Promise<{si:number, off:number, done:number, recent:object, finished:boolean}>}
+ * Import ONE batch of the raw catalog `text` into kino.catalog, streaming — each row is a small JSON snippet parsed on
+ * its own, so the parser never recurses over the whole catalog. `cursor` is serializable and kept between ticks:
+ *   { off: text offset (<0 = not started), done: rows scanned, recent: {catKey:[{id,s}]} }
+ * A text without the `items` array is not this catalog: it throws instead of finishing an empty import.
+ * @returns {Promise<{off:number, done:number, recent:object, finished:boolean}>}
  */
 export async function importTextTick(text, cursor, batch) {
   const k = getKino();
   const max = Math.max(1, Math.min(UPSERT_MAX, Math.floor(Number(batch)) || UPSERT_MAX));
-  let si = cursor && Number.isInteger(cursor.si) ? cursor.si : 0;
   let off = cursor && Number.isInteger(cursor.off) ? cursor.off : -1;
   let done = (cursor && Number(cursor.done)) || 0;
   let recent = cursor && cursor.recent;
   if (!recent) { recent = {}; for (const c of CATEGORIES) recent[c.key] = []; }
 
-  // Skip specs whose array is absent (or already finished), landing `off` at the next array's first element.
-  while (si < STREAM_SPECS.length && off < 0) {
-    off = arrayStart(text, STREAM_SPECS[si].key);
-    if (off < 0) si++;
-  }
-  if (si >= STREAM_SPECS.length) return { si, off: -1, done, recent, finished: true };
+  if (off < 0) off = arrayStart(text, ITEMS_KEY);
+  if (off < 0) throw k.error("unavailable", "unexpected catalog shape");
 
-  const spec = STREAM_SPECS[si];
   const { elems, next, done: arrDone } = scanElements(text, off, max);
   const rows = [];
   let failed = 0;
   for (const e of elems) {
-    let raw;
-    try { raw = JSON.parse(e); } catch (_) { failed++; continue; }
-    if (!raw || raw.id == null) continue;
-    const item = toItem(raw, spec.kind, spec.type);
-    const stored = toStored(item, new Map([[item.id, raw.date]]));
+    let row;
+    try { row = JSON.parse(e); } catch (_) { failed++; continue; }
+    const item = toItem(row);
+    if (!item) { failed++; continue; }
+    const stored = toStored(item, row[2]);
     rows.push(stored);
     const list = recent[item.categoryKey];
     if (list) insertTopN(list, { id: item.id, s: stored.sort }, RECENT_PER_CATEGORY);
   }
   if (rows.length) await k.catalog.upsert(rows);
   done += elems.length;
-  if (failed) { try { k.log && k.log(`Movie+ import: ${failed} of ${elems.length} ${spec.key} items failed to parse at offset ${off}`); } catch (_) {} }
+  if (failed) { try { k.log && k.log(`Movie+ import: ${failed} of ${elems.length} rows skipped at offset ${off}`); } catch (_) {} }
 
-  if (arrDone) {
-    const nextSi = si + 1;
-    return { si: nextSi, off: -1, done, recent, finished: nextSi >= STREAM_SPECS.length };
-  }
-  return { si, off: next, done, recent, finished: false };
+  return { off: arrDone ? -1 : next, done, recent, finished: arrDone };
 }
 
 /** Finish a streamed import: write the recent-by-category lists (from the cursor's `recent`) and the done marker. */
@@ -170,7 +147,6 @@ export function finishImport(recent, total) {
   }
   writeJson(RECENT_KEY, lists);
   writeJson(DONE_KEY, { at: Date.now(), total: Number(total) || 0 });
-  getKino().storage.remove(CURSOR_KEY);
 }
 
 function yearOf(date) {
@@ -182,38 +158,39 @@ function genresOf(raw) {
   return String(raw || "").split(",").map((g) => g.trim()).filter(Boolean);
 }
 
-function toItem(raw, kind, defaultType) {
-  const type = Number(raw.type) || defaultType;
+/**
+ * One light-catalog row `[tmdbId, type, "date", "title", "poster", "genres"]` as a catalog item, or null when the row is
+ * not usable (no positive TMDB id). Type 1 is a movie (TMDB /movie/{id}); every other type is a TMDB tv show.
+ */
+export function toItem(row) {
+  if (!Array.isArray(row)) return null;
+  const tmdb = Number(row[0]);
+  if (!Number.isSafeInteger(tmdb) || tmdb < 1) return null;
+  const type = Number(row[1]) || 1;
+  const kind = type === 1 ? "movie" : "series";
   return {
-    id: (kind === "movie" ? "m:" : "s:") + raw.id,
+    id: (kind === "movie" ? "m:" : "s:") + tmdb,
     kind,
     type,
-    title: String(raw.nameFile || ""),
-    year: yearOf(raw.date),
-    poster: String(raw.urlImage || ""),
-    genres: genresOf(raw.generos),
+    title: String(row[3] || ""),
+    year: yearOf(row[2]),
+    poster: String(row[4] || ""),
+    genres: genresOf(row[5]),
     categoryKey: typeToCategory(type),
   };
 }
 
-export function toCatalogItems(cat) {
-  const out = [];
-  for (const m of (cat && cat.movies) || []) if (m && m.id != null) out.push(toItem(m, "movie", 1));
-  for (const s of (cat && cat.series) || []) if (s && s.id != null) out.push(toItem(s, "series", 2));
-  return out;
-}
-
-function sortOf(item, dates) {
-  const t = Date.parse(dates.get(item.id) || "");
+function sortOf(date) {
+  const t = Date.parse(String(date || ""));
   return Number.isSafeInteger(t) ? t : 0;
 }
 
-function toStored(item, dates) {
+function toStored(item, date) {
   const title = (item.title || `Movie+ ${item.id}`).slice(0, TITLE_MAX).replace(/[\uD800-\uDBFF]$/, "");
   return {
     id: item.id,
     title,
-    sort: sortOf(item, dates),
+    sort: sortOf(date),
     data: { k: item.kind, t: item.type, y: item.year, p: item.poster, g: item.genres.join(",") },
   };
 }
@@ -233,6 +210,7 @@ function fromStored(row) {
   };
 }
 
+
 function readJson(key) {
   try {
     return JSON.parse(getKino().storage.get(key) || "null");
@@ -245,70 +223,6 @@ function writeJson(key, value) {
   try {
     getKino().storage.set(key, JSON.stringify(value));
   } catch (_) { /* storage full: the lists are rebuilt from kino.catalog on demand */ }
-}
-
-function dateIndex(cat) {
-  const dates = new Map();
-  for (const m of (cat && cat.movies) || []) if (m && m.id != null) dates.set("m:" + m.id, m.date);
-  for (const s of (cat && cat.series) || []) if (s && s.id != null) dates.set("s:" + s.id, s.date);
-  return dates;
-}
-
-function signatureOf(items) {
-  const first = items.length ? items[0].id : "";
-  const last = items.length ? items[items.length - 1].id : "";
-  return `${items.length}:${first}:${last}`;
-}
-
-/**
- * Import `cat` into kino.catalog, one batch per call, advancing a cursor kept in kino.storage; a later call (even in a
- * new session, with a freshly downloaded copy) continues from it. A catalog with a different signature restarts at 0.
- * When the last batch lands it stores the newest ids of each category and clears the cursor.
- * @returns {Promise<{done:boolean,cursor:number,total:number}>}
- */
-export async function importCatalog(cat, opts = {}) {
-  const k = getKino();
-  const batch = Math.max(1, Math.min(UPSERT_MAX, Math.floor(Number(opts.batch)) || UPSERT_MAX));
-  const items = toCatalogItems(cat);
-  const total = items.length;
-  const sig = signatureOf(items);
-
-  let cursor = 0;
-  if (Number.isInteger(opts.cursor) && opts.cursor >= 0) {
-    cursor = opts.cursor;
-  } else {
-    const saved = readJson(CURSOR_KEY);
-    if (saved && saved.sig === sig && Number.isInteger(saved.cursor)) cursor = saved.cursor;
-  }
-  if (cursor > total) cursor = 0;
-
-  const dates = dateIndex(cat);
-  const end = Math.min(cursor + batch, total);
-  if (cursor < end) {
-    await k.catalog.upsert(items.slice(cursor, end).map((it) => toStored(it, dates)));
-    cursor = end;
-    writeJson(CURSOR_KEY, { cursor, sig });
-  }
-  if (cursor >= total) {
-    writeJson(RECENT_KEY, recentLists(items, dates));
-    writeJson(DONE_KEY, { at: Date.now(), total });
-    k.storage.remove(CURSOR_KEY);
-    return { done: true, cursor: total, total };
-  }
-  return { done: false, cursor, total };
-}
-
-function recentLists(items, dates) {
-  const lists = {};
-  for (const c of CATEGORIES) lists[c.key] = [];
-  const ranked = items
-    .map((it, i) => ({ it, i, s: sortOf(it, dates) }))
-    .sort((a, b) => b.s - a.s || a.i - b.i);
-  for (const { it } of ranked) {
-    const list = lists[it.categoryKey];
-    if (list && list.length < RECENT_PER_CATEGORY) list.push(it.id);
-  }
-  return lists;
 }
 
 async function getAll(ids) {
@@ -340,12 +254,10 @@ export async function catalogCount() {
   return getKino().catalog.count();
 }
 
-/** True only once a full import has finished: done-marker present, no cursor pending and kino.catalog not empty. */
+/** True only once a full import has finished: done-marker present and kino.catalog not empty. */
 export async function isCatalogReady() {
-  const k = getKino();
   if (!readJson(DONE_KEY)) return false;
-  if (k.storage.get(CURSOR_KEY) != null) return false;
-  return (await k.catalog.count()) > 0;
+  return (await getKino().catalog.count()) > 0;
 }
 
 /** Titles whose name contains every word of `query`, those starting with it first. */

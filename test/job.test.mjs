@@ -31,11 +31,13 @@ beforeEach(() => {
   headHandler = () => ({ status: 200, headers: { etag: '"v1"', "content-length": "100" } });
 });
 
-test("first run only records the mirror signature", async () => {
+const LIGHT = "https://raw.githubusercontent.com/xuper-plugin/kino-plugin-movieplus/data/items-light.json.gz";
+
+test("first run only records the signature of the light catalog file", async () => {
   await job();
   assert.equal(refreshPending(), false);
-  assert.equal(calls[0].method, "HEAD");
-  assert.equal(calls.length, 1);
+  assert.deepEqual(calls, [{ url: LIGHT, method: "HEAD" }]);
+  assert.equal(store.get("movp:catalog:remote:v1"), 'raw.githubusercontent.com|"v1"|100');
 });
 
 test("an unchanged file leaves nothing pending", async () => {
@@ -53,29 +55,20 @@ test("a changed file flags a pending update that clearRefreshPending drops", asy
   assert.equal(refreshPending(), false);
 });
 
-test("a mirror answering in place of another never fabricates a diff, only moves the baseline", async () => {
-  await job();
-  const ids = { etag: '"v1"', "content-length": "100" };
-  headHandler = (url) => { if (url.includes("raw.githubusercontent")) throw new Error("offline"); return { status: 200, headers: ids }; };
-  await job();
-  assert.equal(refreshPending(), false);
-  assert.match(store.get("movp:catalog:remote:v1"), /^appsdevxp\.com\|/);
-});
-
-test("a genuine content change on the same host sets pending, even after falling through failing mirrors", async () => {
-  headHandler = (url) => { if (url.includes("raw.githubusercontent")) throw new Error("offline"); return { status: 200, headers: { etag: '"a"' } }; };
-  await job();
-  headHandler = (url) => { if (url.includes("raw.githubusercontent")) throw new Error("offline"); return { status: 200, headers: { etag: '"b"' } }; };
+test("an install that imported the old full catalog gets the light one on its next open", async () => {
+  store.set("movp:catalog:remote:v1", 'raw.githubusercontent.com|"old-full-catalog"|2732908');
   await job();
   assert.equal(refreshPending(), true);
 });
 
-test("never throws when every mirror fails and leaves the flag alone", async () => {
+test("never throws when the file cannot be reached and leaves the flag alone", async () => {
   await job();
   headHandler = () => { throw new Error("offline"); };
   await assert.doesNotReject(job());
   assert.equal(refreshPending(), false);
-  assert.equal(calls.filter((c) => c.method === "HEAD").length, 4);
+  headHandler = () => ({ status: 503 });
+  await assert.doesNotReject(job());
+  assert.equal(refreshPending(), false);
 });
 
 test("settingsStatus reports the catalog state in the person's language", async () => {

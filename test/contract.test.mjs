@@ -85,7 +85,8 @@ globalThis.kino = {
   },
 };
 
-const { importCatalog } = await import("../src/movp/catalog.js");
+const { importAll, toLight } = await import("./light.mjs");
+const importCatalog = (cat) => importAll(JSON.stringify(toLight(cat)));
 const contract = await import("../src/contract/index.js");
 const { home, search, browse, details, episodes, resolve } = contract;
 const plugin = await import("../src/plugin.js");
@@ -96,9 +97,9 @@ const CATALOG = {
   movies: [
     { id: 15066, type: 1, nameFile: "Walking Tall: The Payback", date: "2007-06-01", generos: "28,53", urlImage: "/walking.jpg" },
     { id: 603, type: 1, nameFile: "The Matrix", date: "1999-03-31", generos: "28,878", urlImage: "/matrix.jpg" },
-    { id: 801, type: 3, nameFile: "Anime Movie", date: "2020-01-01", generos: "16", urlImage: "/anime.jpg" },
   ],
   series: [
+    { id: 801, type: 3, nameFile: "Anime Movie", date: "2020-01-01", generos: "16", urlImage: "/anime.jpg" },
     { id: 52814, type: 2, nameFile: "Halo", date: "2022-03-24", generos: "10765", urlImage: "/halo.jpg" },
     { id: 4000, type: 5, nameFile: "La Telenovela", date: "2021-05-05", generos: "18", urlImage: "/tele.jpg" },
   ],
@@ -126,7 +127,7 @@ beforeEach(async () => {
     apiBase: "https://api.appsxploit.dev", appVersion: "17.4", versionCode: 90355, channel: "prod", settingsProfile: 7,
     reqPrefix: "MOVP-HYBRID-REQUEST-V1", sessionPrefix: "MOVP-HYBRID-SESSION-V1",
   } }));
-  while (!(await importCatalog(CATALOG)).done);
+  await importCatalog(CATALOG);
 });
 
 test("plugin.js re-exports the real contract", () => {
@@ -292,7 +293,7 @@ test("browse: a category pages newest first with a cursor", async () => {
   assert.deepEqual(res.items.map((i) => i.ref), ["m:15066", "m:603"]);
   assert.equal(res.next, undefined);
   const cards = await browse("animes");
-  assert.deepEqual(cards.items.map((i) => i.ref), ["m:801"]);
+  assert.deepEqual(cards.items.map((i) => i.ref), ["s:801"]);
   const tele = await browse("telenovelas");
   assert.deepEqual(tele.items.map((i) => i.ref), ["s:4000"]);
 });
@@ -302,7 +303,7 @@ test("browse: pagination continues from next across the whole catalog", async ()
   for (let i = 1; i <= 130; i++) many.movies.push({ id: 100000 + i, type: 1, nameFile: "Movie " + i, date: `2000-01-${String((i % 28) + 1).padStart(2, "0")}`, urlImage: "/x.jpg" });
   many.series.push({ id: 5, type: 2, nameFile: "Only series", date: "1990-01-01" });
   rows.clear();
-  while (!(await importCatalog(many)).done);
+  await importCatalog(many);
   const p1 = await browse("peliculas", null);
   assert.equal(p1.items.length, 20);
   assert.ok(p1.next);

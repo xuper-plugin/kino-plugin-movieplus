@@ -266,10 +266,10 @@ function countArray(text2, key) {
 
 // src/movp/catalog.js
 var CATALOG_URLS = [
-  "https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items.json.gz",
-  "https://appsdevxp.com/app/db/items.json.gz",
-  "https://developerxploit.com/app/db/items.json.gz"
+  "https://raw.githubusercontent.com/xuper-plugin/kino-plugin-movieplus/data/items-light.json.gz"
 ];
+var ITEMS_KEY = "items";
+var CATALOG_FORMAT = 2;
 var FETCH_TIMEOUT_MS = 3e4;
 var UPSERT_MAX = 500;
 var RECENT_PER_CATEGORY = 200;
@@ -277,7 +277,6 @@ var SCAN_PAGE = 100;
 var SCAN_MAX_PAGES = 30;
 var BROWSE_SCAN_PAGES = 10;
 var TITLE_MAX = 300;
-var CURSOR_KEY = "movp:catalog:cursor:v1";
 var DONE_KEY = "movp:catalog:v1";
 var RECENT_KEY = "movp:catalog:recent:v1";
 var CATEGORIES = [
@@ -327,7 +326,7 @@ async function fetchCatalogText() {
       const resp = await k.fetch(url, { timeoutMs: FETCH_TIMEOUT_MS });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const text2 = gunzipText(resp.base64());
-      if (arrayStart(text2, "movies") < 0 && arrayStart(text2, "series") < 0) throw new Error("unexpected catalog shape");
+      if (arrayStart(text2, ITEMS_KEY) < 0) throw new Error("unexpected catalog shape");
       try {
         k.log && k.log(`Movie+ catalog text ready from ${url}: ${text2.length} chars`);
       } catch (_) {
@@ -344,12 +343,8 @@ async function fetchCatalogText() {
   throw k.error("unavailable", `Movie+ catalog download failed${lastErr && lastErr.message ? ": " + lastErr.message : ""}`);
 }
 function countItemsText(text2) {
-  return countArray(text2, "movies") + countArray(text2, "series");
+  return countArray(text2, ITEMS_KEY);
 }
-var STREAM_SPECS = [
-  { key: "movies", kind: "movie", type: 1 },
-  { key: "series", kind: "series", type: 2 }
-];
 function insertTopN(list, item, n) {
   if (list.length < n) {
     list.push(item);
@@ -362,7 +357,6 @@ function insertTopN(list, item, n) {
 async function importTextTick(text2, cursor, batch) {
   const k = getKino();
   const max = Math.max(1, Math.min(UPSERT_MAX, Math.floor(Number(batch)) || UPSERT_MAX));
-  let si = cursor && Number.isInteger(cursor.si) ? cursor.si : 0;
   let off = cursor && Number.isInteger(cursor.off) ? cursor.off : -1;
   let done = cursor && Number(cursor.done) || 0;
   let recent = cursor && cursor.recent;
@@ -370,26 +364,25 @@ async function importTextTick(text2, cursor, batch) {
     recent = {};
     for (const c of CATEGORIES) recent[c.key] = [];
   }
-  while (si < STREAM_SPECS.length && off < 0) {
-    off = arrayStart(text2, STREAM_SPECS[si].key);
-    if (off < 0) si++;
-  }
-  if (si >= STREAM_SPECS.length) return { si, off: -1, done, recent, finished: true };
-  const spec = STREAM_SPECS[si];
+  if (off < 0) off = arrayStart(text2, ITEMS_KEY);
+  if (off < 0) throw k.error("unavailable", "unexpected catalog shape");
   const { elems, next, done: arrDone } = scanElements(text2, off, max);
   const rows = [];
   let failed = 0;
   for (const e of elems) {
-    let raw;
+    let row;
     try {
-      raw = JSON.parse(e);
+      row = JSON.parse(e);
     } catch (_) {
       failed++;
       continue;
     }
-    if (!raw || raw.id == null) continue;
-    const item = toItem(raw, spec.kind, spec.type);
-    const stored = toStored(item, /* @__PURE__ */ new Map([[item.id, raw.date]]));
+    const item = toItem(row);
+    if (!item) {
+      failed++;
+      continue;
+    }
+    const stored = toStored(item, row[2]);
     rows.push(stored);
     const list = recent[item.categoryKey];
     if (list) insertTopN(list, { id: item.id, s: stored.sort }, RECENT_PER_CATEGORY);
@@ -398,15 +391,11 @@ async function importTextTick(text2, cursor, batch) {
   done += elems.length;
   if (failed) {
     try {
-      k.log && k.log(`Movie+ import: ${failed} of ${elems.length} ${spec.key} items failed to parse at offset ${off}`);
+      k.log && k.log(`Movie+ import: ${failed} of ${elems.length} rows skipped at offset ${off}`);
     } catch (_) {
     }
   }
-  if (arrDone) {
-    const nextSi = si + 1;
-    return { si: nextSi, off: -1, done, recent, finished: nextSi >= STREAM_SPECS.length };
-  }
-  return { si, off: next, done, recent, finished: false };
+  return { off: arrDone ? -1 : next, done, recent, finished: arrDone };
 }
 function finishImport(recent, total) {
   const lists = {};
@@ -416,7 +405,6 @@ function finishImport(recent, total) {
   }
   writeJson(RECENT_KEY, lists);
   writeJson(DONE_KEY, { at: Date.now(), total: Number(total) || 0 });
-  getKino().storage.remove(CURSOR_KEY);
 }
 function yearOf(date) {
   const y = String(date || "").slice(0, 4);
@@ -425,29 +413,33 @@ function yearOf(date) {
 function genresOf(raw) {
   return String(raw || "").split(",").map((g) => g.trim()).filter(Boolean);
 }
-function toItem(raw, kind, defaultType) {
-  const type = Number(raw.type) || defaultType;
+function toItem(row) {
+  if (!Array.isArray(row)) return null;
+  const tmdb2 = Number(row[0]);
+  if (!Number.isSafeInteger(tmdb2) || tmdb2 < 1) return null;
+  const type = Number(row[1]) || 1;
+  const kind = type === 1 ? "movie" : "series";
   return {
-    id: (kind === "movie" ? "m:" : "s:") + raw.id,
+    id: (kind === "movie" ? "m:" : "s:") + tmdb2,
     kind,
     type,
-    title: String(raw.nameFile || ""),
-    year: yearOf(raw.date),
-    poster: String(raw.urlImage || ""),
-    genres: genresOf(raw.generos),
+    title: String(row[3] || ""),
+    year: yearOf(row[2]),
+    poster: String(row[4] || ""),
+    genres: genresOf(row[5]),
     categoryKey: typeToCategory(type)
   };
 }
-function sortOf(item, dates) {
-  const t2 = Date.parse(dates.get(item.id) || "");
+function sortOf(date) {
+  const t2 = Date.parse(String(date || ""));
   return Number.isSafeInteger(t2) ? t2 : 0;
 }
-function toStored(item, dates) {
+function toStored(item, date) {
   const title = (item.title || `Movie+ ${item.id}`).slice(0, TITLE_MAX).replace(/[\uD800-\uDBFF]$/, "");
   return {
     id: item.id,
     title,
-    sort: sortOf(item, dates),
+    sort: sortOf(date),
     data: { k: item.kind, t: item.type, y: item.year, p: item.poster, g: item.genres.join(",") }
   };
 }
@@ -504,10 +496,8 @@ async function catalogCount() {
   return getKino().catalog.count();
 }
 async function isCatalogReady() {
-  const k = getKino();
   if (!readJson(DONE_KEY)) return false;
-  if (k.storage.get(CURSOR_KEY) != null) return false;
-  return await k.catalog.count() > 0;
+  return await getKino().catalog.count() > 0;
 }
 async function searchCatalog(query, limit = 50) {
   const q = String(query || "").trim().slice(0, 256);
@@ -1445,7 +1435,7 @@ function gateView(state) {
   };
   return tick ? { ...tree, every: [{ ms: TICK_MS, event: tick }] } : tree;
 }
-function readMeta() {
+function readStoredMeta() {
   try {
     const m = JSON.parse(getKino8().storage.get(META_KEY) || "null");
     return m && Number.isInteger(m.chunks) && m.chunks > 0 ? m : null;
@@ -1453,12 +1443,20 @@ function readMeta() {
     return null;
   }
 }
+function readMeta() {
+  const m = readStoredMeta();
+  if (m && m.fmt !== CATALOG_FORMAT) {
+    clearRaw();
+    return null;
+  }
+  return m;
+}
 function writeMeta(meta) {
   getKino8().storage.set(META_KEY, JSON.stringify(meta));
 }
 function clearRaw() {
   const st = getKino8().storage;
-  const meta = readMeta();
+  const meta = readStoredMeta();
   if (meta) for (let i = 0; i < meta.chunks; i++) st.remove(CHUNK_KEY + i);
   st.remove(META_KEY);
 }
@@ -1478,7 +1476,7 @@ function storeRaw(text2, total, remote) {
   const chunks = chunkText(text2);
   try {
     chunks.forEach((c, i) => getKino8().storage.set(CHUNK_KEY + i, c));
-    writeMeta({ chunks: chunks.length, total, cursor: { si: 0, off: -1, done: 0, recent: null }, remote });
+    writeMeta({ fmt: CATALOG_FORMAT, chunks: chunks.length, total, cursor: { off: -1, done: 0, recent: null }, remote });
   } catch (err) {
     for (let i = 0; i < chunks.length; i++) getKino8().storage.remove(CHUNK_KEY + i);
     throw err;
@@ -1543,7 +1541,7 @@ async function importStep() {
       await recordRemote(meta.remote);
       return { state: { importing: false, ready: true, empty: false, imported: true, cursor: total, total } };
     }
-    writeMeta({ ...meta, cursor: { si: next.si, off: next.off, done: next.done, recent: next.recent } });
+    writeMeta({ ...meta, cursor: { off: next.off, done: next.done, recent: next.recent } });
     return { state: { cursor: next.done, total } };
   } catch (_) {
     clearRaw();

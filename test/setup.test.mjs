@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 
 const sampleGz = readFileSync(new URL("./fixtures/items-sample.json.gz", import.meta.url));
 const sample = JSON.parse(gunzipSync(sampleGz).toString("utf8"));
-const SAMPLE_TOTAL = sample.movies.length + sample.series.length;
+const SAMPLE_TOTAL = sample.items.length;
 const manifest = JSON.parse(readFileSync(new URL("../kino-plugin.json", import.meta.url), "utf8"));
 
 const RECIPE = {

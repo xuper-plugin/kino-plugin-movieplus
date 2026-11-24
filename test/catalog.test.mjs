@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 
 const sampleGz = readFileSync(new URL("./fixtures/items-sample.json.gz", import.meta.url));
 const sample = JSON.parse(gunzipSync(sampleGz).toString("utf8"));
-const SAMPLE_TOTAL = sample.movies.length + sample.series.length;
+const SAMPLE_TOTAL = sample.items.length;
+const SAMPLE_MOVIES = sample.items.filter((r) => r[1] === 1).length;
 
 const store = new Map();
 const rows = new Map();
@@ -72,14 +73,13 @@ globalThis.kino = {
 };
 
 const {
-  CATEGORIES, typeToCategory, fetchCatalog, toCatalogItems, importCatalog, recentByCategory, catalogCount, isCatalogReady, browseCategory,
+  CATEGORIES, CATALOG_URLS, typeToCategory, fetchCatalogText, countItemsText, toItem, importTextTick, finishImport,
+  recentByCategory, catalogCount, isCatalogReady, browseCategory,
 } = await import("../src/movp/catalog.js");
+const { importAll } = await import("./light.mjs");
 
-const URLS = [
-  "https://raw.githubusercontent.com/dev-mplus01/mplus01T/main/db/items.json.gz",
-  "https://appsdevxp.com/app/db/items.json.gz",
-  "https://developerxploit.com/app/db/items.json.gz",
-];
+const URL_LIGHT = "https://raw.githubusercontent.com/xuper-plugin/kino-plugin-movieplus/data/items-light.json.gz";
+const sampleText = () => gunzipSync(sampleGz).toString("utf8");
 
 beforeEach(() => {
   store.clear();
@@ -109,161 +109,107 @@ test("typeToCategory maps every catalog type", () => {
   assert.equal(typeToCategory("4"), "animes");
 });
 
-test("fetchCatalog downloads and parses the gzip catalog", async () => {
-  const cat = await fetchCatalog();
-  assert.equal(cat.movies.length, sample.movies.length);
-  assert.equal(cat.series.length, sample.series.length);
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].url, URLS[0]);
+test("the catalog comes only from the light file on the plugin's data branch", () => {
+  assert.deepEqual(CATALOG_URLS, [URL_LIGHT]);
 });
 
-test("fetchCatalog falls back through the mirrors in order", async () => {
-  fetchHandler = (url) => (url === URLS[2] ? { status: 200, bytes: sampleGz } : { status: 503, bytes: Buffer.from("down") });
-  const cat = await fetchCatalog();
-  assert.equal(cat.series.length, sample.series.length);
-  assert.deepEqual(fetchCalls.map((c) => c.url), URLS);
+test("fetchCatalogText downloads and unzips the light catalog", async () => {
+  const text = await fetchCatalogText();
+  assert.equal(text, sampleText());
+  assert.equal(countItemsText(text), SAMPLE_TOTAL);
+  assert.deepEqual(fetchCalls.map((c) => c.url), [URL_LIGHT]);
 });
 
-test("fetchCatalog falls through a mirror that throws or serves garbage", async () => {
-  fetchHandler = (url) => {
-    if (url === URLS[0]) throw new KinoError("network", "boom");
-    if (url === URLS[1]) return { status: 200, bytes: Buffer.from("not gzip at all, just text") };
-    return { status: 200, bytes: sampleGz };
-  };
-  const cat = await fetchCatalog();
-  assert.equal(cat.movies.length, sample.movies.length);
-  assert.equal(fetchCalls.length, 3);
+test("fetchCatalogText fails clearly on an HTTP error, a throw, garbage or the old full-catalog shape", async () => {
+  const old = gzipSync(JSON.stringify({ movies: [{ id: 1, nameFile: "A" }], series: [] }));
+  for (const handler of [
+    () => ({ status: 500, bytes: Buffer.from("x") }),
+    () => { throw new KinoError("network", "boom"); },
+    () => ({ status: 200, bytes: Buffer.from("not gzip at all, just text") }),
+    () => ({ status: 200, bytes: old }),
+  ]) {
+    fetchHandler = handler;
+    await assert.rejects(fetchCatalogText(), (e) => e.code === "unavailable");
+  }
 });
 
-test("fetchCatalog fails clearly when every mirror fails", async () => {
-  fetchHandler = () => ({ status: 500, bytes: Buffer.from("x") });
-  await assert.rejects(fetchCatalog(), (e) => e.code === "unavailable");
-  assert.equal(fetchCalls.length, 3);
-});
-
-test("fetchCatalog inflates a catalog over kino.crypto.gunzip's 5 MB cap in pure JS", async () => {
+test("fetchCatalogText inflates a catalog over kino.crypto.gunzip's 5 MB cap in pure JS", async () => {
   let seed = 12345;
   const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff);
   const word = () => rnd().toString(36);
-  const big = { movies: [], series: [] };
-  for (let i = 0; i < 35000; i++) {
-    big.movies.push({
-      id: 100000 + i, type: 1, nameFile: `Película ñandú ${word()} ${word()}`, date: "2021-10-12",
-      generos: "Drama , Acción", urlImage: `/${word()}${word()}${word()}.jpg`, vote: i % 10,
-      urls: [`720p CAST,_,1.52 GB,_,${word()}${word()}${word()}${word()}${word()}${word()}${word()}`],
-    });
+  const items = [];
+  for (let i = 0; i < 60000; i++) {
+    items.push([100000 + i, 1 + (i % 7), "2021-10-12", `Película ñandú ${word()} ${word()}`, `/${word()}${word()}${word()}.jpg`, "Drama , Acción"]);
   }
-  for (let i = 0; i < 2000; i++) big.series.push({ id: 900000 + i, type: 2 + (i % 5), nameFile: `Serie ${word()}`, date: "2022-03-24" });
-  const raw = Buffer.from(JSON.stringify(big), "utf8");
+  const raw = Buffer.from(JSON.stringify({ v: 2, items }), "utf8");
   assert.ok(raw.length > 5242880, "fixture must exceed the native cap");
-  const gz = gzipSync(raw);
-  fetchHandler = () => ({ status: 200, bytes: gz });
-  const cat = await fetchCatalog();
-  assert.equal(cat.movies.length, 35000);
-  assert.equal(cat.series.length, 2000);
-  assert.deepEqual(cat.movies[34999], big.movies[34999]);
-  assert.equal(cat.movies[7].nameFile, big.movies[7].nameFile);
+  fetchHandler = () => ({ status: 200, bytes: gzipSync(raw) });
+  const text = await fetchCatalogText();
+  assert.equal(text, raw.toString("utf8"));
+  assert.equal(countItemsText(text), 60000);
 });
 
-test("toCatalogItems maps movies and series", () => {
-  const items = toCatalogItems(sample);
-  assert.equal(items.length, SAMPLE_TOTAL);
-  const halo = items.find((i) => i.id === "s:52814");
-  assert.deepEqual(halo, {
+test("toItem maps a light row to a catalog item", () => {
+  assert.deepEqual(toItem([52814, 2, "2022-03-24", "Halo", "/lfTm372lHNjQnnUwpdumVfUB0rh.jpg", "fantasia ciencia ficción"]), {
     id: "s:52814", kind: "series", type: 2, title: "Halo", year: "2022",
     poster: "/lfTm372lHNjQnnUwpdumVfUB0rh.jpg", genres: ["fantasia ciencia ficción"], categoryKey: "series",
   });
-  const movie = items.find((i) => i.id === "m:800410");
+  const movie = toItem([800410, 1, "2021-10-12", "El paramo", "/p.jpg", "Drama , Terror , Suspense"]);
+  assert.equal(movie.id, "m:800410");
   assert.equal(movie.kind, "movie");
-  assert.equal(movie.type, 1);
   assert.equal(movie.categoryKey, "peliculas");
-  assert.equal(movie.year, "2021");
   assert.deepEqual(movie.genres, ["Drama", "Terror", "Suspense"]);
-  const anime = items.find((i) => i.kind === "series" && i.type === 4);
-  assert.equal(anime.categoryKey, "animes");
-  assert.equal(new Set(items.map((i) => i.id)).size, SAMPLE_TOTAL);
+  assert.equal(toItem([7, 4, "", "Cartoon"]).categoryKey, "animes");
+  assert.equal(toItem([7, 4, "", "Cartoon"]).kind, "series");
 });
 
-test("toCatalogItems defaults a missing type and tolerates missing fields", () => {
-  const items = toCatalogItems({
-    movies: [{ id: 1, nameFile: "A", date: "1999-01-02" }],
-    series: [{ id: 2, nameFile: "B" }],
-  });
-  assert.equal(items[0].type, 1);
-  assert.equal(items[0].id, "m:1");
-  assert.equal(items[1].type, 2);
-  assert.equal(items[1].id, "s:2");
-  assert.equal(items[1].year, "");
-  assert.equal(items[1].poster, "");
-  assert.deepEqual(items[1].genres, []);
-  assert.deepEqual(toCatalogItems({}), []);
+test("toItem tolerates missing fields and refuses rows without a TMDB id", () => {
+  assert.deepEqual(toItem([2]), { id: "m:2", kind: "movie", type: 1, title: "", year: "", poster: "", genres: [], categoryKey: "peliculas" });
+  for (const bad of [null, {}, [], [0, 1], [-3, 1], ["abc", 1], [1.5, 1]]) assert.equal(toItem(bad), null, JSON.stringify(bad));
 });
 
-test("importCatalog indexes the sample into kino.catalog in one go", async () => {
-  const r = await importCatalog(await fetchCatalog());
-  assert.deepEqual(r, { done: true, cursor: SAMPLE_TOTAL, total: SAMPLE_TOTAL });
-  assert.equal(await kino.catalog.count(), SAMPLE_TOTAL);
-  assert.equal(await catalogCount(), SAMPLE_TOTAL);
-  const [halo] = await kino.catalog.get(["s:52814"]);
-  assert.equal(halo.title, "Halo");
-  assert.equal(halo.data.k, "series");
-  assert.equal(halo.data.t, 2);
-  assert.equal(halo.data.y, "2022");
-  assert.equal(halo.data.p, "/lfTm372lHNjQnnUwpdumVfUB0rh.jpg");
-  assert.equal(halo.sort, Date.parse("2022-03-24"));
-  assert.ok(store.size > 0);
-});
-
-test("importCatalog is resumable by batches and the cursor survives between calls", async () => {
-  const cat = await fetchCatalog();
-  const a = await importCatalog(cat, { batch: 10 });
-  assert.deepEqual(a, { done: false, cursor: 10, total: SAMPLE_TOTAL });
+test("importTextTick imports the sample batch by batch from a serializable cursor", async () => {
+  const text = sampleText();
+  const a = await importTextTick(text, null, 10);
+  assert.equal(a.done, 10);
+  assert.equal(a.finished, false);
   assert.equal(await kino.catalog.count(), 10);
-  const b = await importCatalog(cat, { batch: 10 });
-  assert.deepEqual(b, { done: false, cursor: 20, total: SAMPLE_TOTAL });
-  const c = await importCatalog(cat, { batch: 10 });
-  assert.deepEqual(c, { done: true, cursor: SAMPLE_TOTAL, total: SAMPLE_TOTAL });
+  const cursor = JSON.parse(JSON.stringify(a));
+  const b = await importTextTick(text, cursor, 10);
+  assert.equal(b.done, 20);
+  const c = await importTextTick(text, b, 10);
+  assert.equal(c.finished, true);
+  assert.equal(c.done, SAMPLE_TOTAL);
   assert.equal(await kino.catalog.count(), SAMPLE_TOTAL);
   const [halo] = await kino.catalog.get(["s:52814"]);
   assert.equal(halo.title, "Halo");
+  assert.deepEqual(halo.data, { k: "series", t: 2, y: "2022", p: "/lfTm372lHNjQnnUwpdumVfUB0rh.jpg", g: "fantasia ciencia ficción" });
+  assert.equal(halo.sort, Date.parse("2022-03-24"));
 });
 
-test("importCatalog resumes from storage with a freshly downloaded catalog", async () => {
-  await importCatalog(await fetchCatalog(), { batch: 7 });
-  const again = await importCatalog(await fetchCatalog(), { batch: 7 });
-  assert.equal(again.cursor, 14);
-  assert.equal(again.done, false);
+test("importTextTick clamps the batch to kino.catalog's 500 cap", async () => {
+  const items = Array.from({ length: 1200 }, (_, i) => [i + 1, 1, "2020-01-01", "T" + i]);
+  const r = await importTextTick(JSON.stringify({ v: 2, items }), null, 100000);
+  assert.equal(r.done, 500);
+  assert.equal(r.finished, false);
 });
 
-test("importCatalog restarts when the catalog changed under the cursor", async () => {
-  const cat = await fetchCatalog();
-  await importCatalog(cat, { batch: 10 });
-  const other = { movies: cat.movies.slice(0, 2), series: cat.series.slice(0, 3) };
-  const r = await importCatalog(other, { batch: 4 });
-  assert.deepEqual(r, { done: false, cursor: 4, total: 5 });
+test("importTextTick skips rows it cannot use and still finishes", async () => {
+  const text = JSON.stringify({ v: 2, items: [[1, 1, "2020-01-01", "A"], [0, 1, "", "no id"], { id: 3 }, [4, 6, "2021-01-01", "D"]] });
+  const r = await importTextTick(text, null, 500);
+  assert.equal(r.finished, true);
+  assert.deepEqual([...rows.keys()].sort(), ["m:1", "s:4"]);
 });
 
-test("importCatalog clears its cursor when done so the next import starts over", async () => {
-  const cat = await fetchCatalog();
-  await importCatalog(cat);
-  const r = await importCatalog(cat, { batch: 10 });
-  assert.deepEqual(r, { done: false, cursor: 10, total: SAMPLE_TOTAL });
-});
-
-test("importCatalog honours an explicit cursor and clamps the batch to kino.catalog's 500 cap", async () => {
-  const cat = await fetchCatalog();
-  const r = await importCatalog(cat, { batch: 10, cursor: 25 });
-  assert.deepEqual(r, { done: true, cursor: SAMPLE_TOTAL, total: SAMPLE_TOTAL });
-  assert.equal(await kino.catalog.count(), 5);
-  const huge = { movies: Array.from({ length: 1200 }, (_, i) => ({ id: i + 1, nameFile: "T" + i, date: "2020-01-01" })), series: [] };
-  const big = await importCatalog(huge, { batch: 100000 });
-  assert.deepEqual(big, { done: false, cursor: 500, total: 1200 });
+test("importTextTick refuses a text that is not the light catalog", async () => {
+  await assert.rejects(importTextTick(JSON.stringify({ movies: [{ id: 1 }] }), null, 10), (e) => e.code === "unavailable");
+  assert.equal(rows.size, 0);
 });
 
 test("recentByCategory lists the newest items of one category", async () => {
-  await importCatalog(await fetchCatalog());
+  await importAll(sampleText());
   const animes = await recentByCategory("animes", 100);
-  const expected = toCatalogItems(sample).filter((i) => i.categoryKey === "animes");
+  const expected = sample.items.map(toItem).filter((i) => i.categoryKey === "animes");
   assert.equal(animes.length, expected.length);
   assert.ok(animes.every((i) => i.categoryKey === "animes" && (i.type === 3 || i.type === 4)));
   assert.deepEqual(animes.map((i) => i.id).sort(), expected.map((i) => i.id).sort());
@@ -273,15 +219,15 @@ test("recentByCategory lists the newest items of one category", async () => {
   assert.equal(limited.length, 3);
   assert.deepEqual(limited[0], animes[0]);
   const halo = (await recentByCategory("series", 100)).find((i) => i.id === "s:52814");
-  assert.deepEqual(halo, toCatalogItems(sample).find((i) => i.id === "s:52814"));
+  assert.deepEqual(halo, toItem(sample.items.find((r) => r[0] === 52814)));
   assert.deepEqual(await recentByCategory("duanju", 10), []);
 });
 
 test("recentByCategory still works from kino.catalog when the recent lists are gone", async () => {
-  await importCatalog(await fetchCatalog());
+  await importAll(sampleText());
   for (const k of store.keys()) store.delete(k);
   const peliculas = await recentByCategory("peliculas", 100);
-  assert.equal(peliculas.length, sample.movies.length);
+  assert.equal(peliculas.length, SAMPLE_MOVIES);
   assert.ok(peliculas.every((i) => i.kind === "movie"));
 });
 
@@ -303,22 +249,19 @@ test("inflate handles stored, fixed and dynamic deflate blocks and rejects garba
 
 test("isCatalogReady is true only after a full import completes", async () => {
   assert.equal(await isCatalogReady(), false);
-  const cat = await fetchCatalog();
-  await importCatalog(cat, { batch: 10 });
+  const text = sampleText();
+  const first = await importTextTick(text, null, 10);
   assert.ok((await catalogCount()) > 0);
   assert.equal(await isCatalogReady(), false);
-  await importCatalog(cat, { batch: 10 });
-  assert.equal(await isCatalogReady(), false);
-  const last = await importCatalog(cat, { batch: 10 });
-  assert.equal(last.done, true);
+  let cur = first;
+  while (!cur.finished) cur = await importTextTick(text, cur, 10);
+  assert.equal(await isCatalogReady(), false, "not ready before finishImport");
+  finishImport(cur.recent, cur.done);
   assert.equal(await isCatalogReady(), true);
-  await importCatalog(cat, { batch: 10 });
-  assert.equal(await isCatalogReady(), false, "a new partial re-import is not ready");
 });
 
 test("isCatalogReady is false when the done-marker exists but kino.catalog is empty", async () => {
-  const cat = await fetchCatalog();
-  await importCatalog(cat);
+  await importAll(sampleText());
   assert.equal(await isCatalogReady(), true);
   await kino.catalog.clear();
   assert.equal(await isCatalogReady(), false);
