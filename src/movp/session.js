@@ -23,9 +23,9 @@ function httpError(message, status, extra) {
   return err;
 }
 
-function parseBody(resp) {
+function parseBody(text) {
   try {
-    return resp.json();
+    return JSON.parse(text);
   } catch (_) {
     return null;
   }
@@ -37,11 +37,12 @@ async function post(path, bodyObj, headers) {
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(bodyObj),
   });
-  const data = parseBody(resp);
+  const text = resp.text ? resp.text() : null;
+  const data = text ? parseBody(text) : null;
   const reason = data && (data.error || data.code);
   const sessionInvalid = resp.status === 401 || (!!reason && typeof reason === "string" && SESSION_ERROR.test(reason));
   if (!resp.ok || (data && data.ok === false && sessionInvalid)) {
-    if (resp.status === 403) getKino().log("info", `[movp-debug] 403 body: ${JSON.stringify(data)}`);
+    if (resp.status === 403) getKino().log("info", `[movp-debug] 403 raw(200): ${String(text).slice(0, 200)}`);
     throw httpError(`${path} failed (HTTP ${resp.status}${reason ? ", " + reason : ""})`, resp.status, { sessionInvalid });
   }
   return data === null ? {} : data;
