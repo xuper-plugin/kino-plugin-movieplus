@@ -194,7 +194,7 @@ test("episodes: Halo from the series document, named by TMDB", async () => {
   });
   assert.equal(res.episodes[1].title, "Episodio 2");
   assert.deepEqual(res.episodes.slice(8, 10).map((e) => e.ref), ["e:52814:1:9", "e:52814:2:1"]);
-  assert.equal(fetchCalls.filter((c) => route(c) === "/v2/client/playback").length, 0, "listing never resolves tokens");
+  assert.equal(fetchCalls.filter((c) => route(c) === "/v3/client/playback").length, 0, "listing never resolves tokens");
 });
 
 test("episodes: without TMDB the episodes are still listed, numbered", async () => {
@@ -209,12 +209,12 @@ test("episodes: without TMDB the episodes are still listed, numbered", async () 
 });
 
 const playbackHandler = (call) => {
-  if (route(call) === "/v2/client/movie-variants") return { body: movieVariants };
-  if (route(call) === "/v2/client/document") return { body: documentTv };
-  if (route(call) === "/v2/client/playback") return { body: playback };
+  if (route(call) === "/v3/client/movie-variants") return { body: movieVariants };
+  if (route(call) === "/v3/client/document") return { body: documentTv };
+  if (route(call) === "/v3/client/playback") return { body: playback };
   throw new Error("unexpected " + route(call));
 };
-const played = () => fetchCalls.filter((c) => route(c) === "/v2/client/playback").map((c) => JSON.parse(c.body).token);
+const played = () => fetchCalls.filter((c) => route(c) === "/v3/client/playback").map((c) => JSON.parse(c.body).token);
 
 test("resolve movie: resolves the token at play time; 1080p default, the rest as lazy alternatives", async () => {
   fetchHandler = playbackHandler;
@@ -249,7 +249,7 @@ test("resolve: maxQuality setting caps the default; a #quality ref picks that co
 });
 
 test("resolve: only 4K available → plays it rather than failing", async () => {
-  fetchHandler = (call) => route(call) === "/v2/client/playback" ? { body: playback }
+  fetchHandler = (call) => route(call) === "/v3/client/playback" ? { body: playback }
     : { body: variantsBody(["4K,_,10 GB,_,Movp2!::cv-x.a.b"]) };
   const st = await resolve("m:1");
   assert.match(st.label, /^4K/);
@@ -260,7 +260,7 @@ test("resolve: stale token (unavailable) → variants re-fetched once and the ne
   let variantsCalls = 0;
   let playbackCalls = 0;
   fetchHandler = (call) => {
-    if (route(call) === "/v2/client/movie-variants") {
+    if (route(call) === "/v3/client/movie-variants") {
       variantsCalls++;
       const tok = variantsCalls === 1 ? "STALE" : "FRESH";
       return { body: variantsBody([`1080p DUAL,_,6.83 GB,_,Movp2!::cv-x.${tok}.sig`, `CAST,_,1 GB,_,Movp2!::cv-x.c${variantsCalls}.sig`]) };
@@ -275,7 +275,7 @@ test("resolve: stale token (unavailable) → variants re-fetched once and the ne
 });
 
 test("resolve: a second unavailable is not retried again", async () => {
-  fetchHandler = (call) => route(call) === "/v2/client/playback" ? { body: { status: "expired" } } : playbackHandler(call);
+  fetchHandler = (call) => route(call) === "/v3/client/playback" ? { body: { status: "expired" } } : playbackHandler(call);
   await assert.rejects(() => resolve("m:15066"), (e) => e.code === "unavailable");
   assert.equal(played().length, 2);
 });

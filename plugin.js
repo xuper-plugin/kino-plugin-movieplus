@@ -826,9 +826,9 @@ function httpError(message, status, extra) {
   if (extra) Object.assign(err, extra);
   return err;
 }
-function parseBody(text2) {
+function parseBody(resp) {
   try {
-    return JSON.parse(text2);
+    return resp.json();
   } catch (_) {
     return null;
   }
@@ -839,12 +839,10 @@ async function post(path, bodyObj, headers) {
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(bodyObj)
   });
-  const text2 = resp.text ? resp.text() : null;
-  const data = text2 ? parseBody(text2) : null;
+  const data = parseBody(resp);
   const reason = data && (data.error || data.code);
   const sessionInvalid = resp.status === 401 || !!reason && typeof reason === "string" && SESSION_ERROR.test(reason);
   if (!resp.ok || data && data.ok === false && sessionInvalid) {
-    if (resp.status === 403) getKino4().log("info", `[movp-debug] 403 raw(200): ${String(text2).slice(0, 200)}`);
     throw httpError(`${path} failed (HTTP ${resp.status}${reason ? ", " + reason : ""})`, resp.status, { sessionInvalid });
   }
   return data === null ? {} : data;
@@ -882,12 +880,11 @@ function clearStored() {
 }
 async function handshake() {
   const r = recipe();
-  getKino4().log("info", `[movp-debug] challenge versionCode=${r.versionCode} appVersion=${r.appVersion}`);
   const id = getIdentity();
-  const challenge = await post("/v2/client/challenge", { schemaVersion: 1, versionCode: r.versionCode });
+  const challenge = await post("/v3/client/challenge", { schemaVersion: 1, versionCode: r.versionCode });
   const jwt = challenge.challenge;
   if (!jwt) throw getKino4().error("unavailable", "Movie+ challenge missing");
-  const session = await post("/v2/client/session", {
+  const session = await post("/v3/client/session", {
     schemaVersion: 1,
     publicKeySpki: id.spkiB64,
     challenge: jwt,
@@ -899,14 +896,14 @@ ${id.deviceId}`)
   const token = session.sessionToken;
   if (!token) throw getKino4().error("unavailable", "Movie+ session token missing");
   const grants = {};
-  const bootstrap = await signedFetch("/v2/client/bootstrap", {
+  const bootstrap = await signedFetch("/v3/client/bootstrap", {
     schemaVersion: 1,
     deviceId: id.deviceId,
     channel: r.channel,
     settingsProfile: r.settingsProfile
   }, token);
   Object.assign(grants, bootstrap.admission && bootstrap.admission.grants || bootstrap.grants || {});
-  const auth = await signedFetch("/v2/client/auth", {
+  const auth = await signedFetch("/v3/client/auth", {
     schemaVersion: 1,
     deviceId: id.deviceId,
     action: "guest",
@@ -967,7 +964,7 @@ async function movieStreams(movieId) {
   const id = /^\d+$/.test(String(movieId)) ? Number(movieId) : NaN;
   if (!Number.isSafeInteger(id) || id < 1) throw fail("invalid_request", `bad movie id: ${movieId}`);
   const s = await ensureSession();
-  const resp = await call("/v2/client/movie-variants", {
+  const resp = await call("/v3/client/movie-variants", {
     schemaVersion: SCHEMA_VERSION,
     deviceId: s.deviceId,
     grantId: grant(s, "catalog"),
@@ -1009,7 +1006,7 @@ async function seriesDocument(seriesId) {
   const docId = String(seriesId);
   if (!SERIES_ID.test(docId)) throw fail("invalid_request", `bad series id: ${seriesId}`);
   const s = await ensureSession();
-  const resp = await call("/v2/client/document", {
+  const resp = await call("/v3/client/document", {
     schemaVersion: SCHEMA_VERSION,
     deviceId: s.deviceId,
     grantId: grant(s, "catalog"),
@@ -1065,7 +1062,7 @@ async function resolveToken(token, resolveProvider = true) {
     throw fail("invalid_request", "bad Movie+ playback token");
   }
   const s = await ensureSession();
-  const resp = await call("/v2/client/playback", {
+  const resp = await call("/v3/client/playback", {
     schemaVersion: SCHEMA_VERSION,
     deviceId: s.deviceId,
     grantId: grant(s, "catalog-value"),

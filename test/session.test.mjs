@@ -71,13 +71,13 @@ function handshakeServer({ tokens = ["tok-1", "tok-2", "tok-3"], reject401 = () 
   let issued = 0;
   return (c) => {
     const path = c.url.slice(API.length);
-    if (path === "/v2/client/challenge") return { body: responses.challenge };
-    if (path === "/v2/client/session") {
+    if (path === "/v3/client/challenge") return { body: responses.challenge };
+    if (path === "/v3/client/session") {
       return { body: { ...responses.session, sessionToken: tokens[issued++] } };
     }
     if (reject401(c, path)) return { status: 401, body: { ok: false, error: "invalid_session" } };
-    if (path === "/v2/client/bootstrap") return { body: responses.bootstrap };
-    if (path === "/v2/client/auth") return { body: responses.auth };
+    if (path === "/v3/client/bootstrap") return { body: responses.bootstrap };
+    if (path === "/v3/client/auth") return { body: responses.auth };
     return { body: { ok: true, echo: path } };
   };
 }
@@ -95,12 +95,12 @@ beforeEach(() => {
 test("signedFetch: POST to API+path with the 5 X-MOVP headers and a verifiable signature", async () => {
   fetchHandler = () => ({ body: { ok: true, hello: "world" } });
   const body = { schemaVersion: 1, deviceId: identity.deviceId, channel: "prod", settingsProfile: 7 };
-  const resp = await signedFetch("/v2/client/bootstrap", body, "SESSION-TOKEN");
+  const resp = await signedFetch("/v3/client/bootstrap", body, "SESSION-TOKEN");
 
   assert.deepEqual(resp, { ok: true, hello: "world" });
   assert.equal(fetchCalls.length, 1);
   const c = fetchCalls[0];
-  assert.equal(c.url, API + "/v2/client/bootstrap");
+  assert.equal(c.url, API + "/v3/client/bootstrap");
   assert.equal(c.method, "POST");
   assert.equal(c.body, '{"schemaVersion":1,"deviceId":"11111111-2222-4333-8444-555555555555","channel":"prod","settingsProfile":7}');
 
@@ -111,20 +111,20 @@ test("signedFetch: POST to API+path with the 5 X-MOVP headers and a verifiable s
   assert.equal(h["X-MOVP-App-Version"], "17.4");
   assert.equal(h["X-MOVP-App-Version-Code"], "90355");
 
-  const preimage = `MOVP-HYBRID-REQUEST-V1\nPOST\n/v2/client/bootstrap\n${sha(c.body)}\n${h["X-MOVP-Hybrid-Nonce"]}\n${sha("SESSION-TOKEN")}`;
+  const preimage = `MOVP-HYBRID-REQUEST-V1\nPOST\n/v3/client/bootstrap\n${sha(c.body)}\n${h["X-MOVP-Hybrid-Nonce"]}\n${sha("SESSION-TOKEN")}`;
   assert.ok(verifies(preimage, h["X-MOVP-Hybrid-Signature"]), "signature must verify over the documented preimage");
 });
 
 test("signedFetch: a fresh nonce on every request", async () => {
   fetchHandler = () => ({ body: { ok: true } });
-  await signedFetch("/v2/client/x", {}, "t");
-  await signedFetch("/v2/client/x", {}, "t");
+  await signedFetch("/v3/client/x", {}, "t");
+  await signedFetch("/v3/client/x", {}, "t");
   assert.notEqual(fetchCalls[0].headers["X-MOVP-Hybrid-Nonce"], fetchCalls[1].headers["X-MOVP-Hybrid-Nonce"]);
 });
 
 test("signedFetch: HTTP 401 throws an error carrying status 401", async () => {
   fetchHandler = () => ({ status: 401, body: { ok: false, error: "invalid_session" } });
-  await assert.rejects(() => signedFetch("/v2/client/x", {}, "t"), (e) => e.status === 401);
+  await assert.rejects(() => signedFetch("/v3/client/x", {}, "t"), (e) => e.status === 401);
 });
 
 test("ensureSession: runs challenge→session→bootstrap→auth with the exact bodies", async () => {
@@ -132,7 +132,7 @@ test("ensureSession: runs challenge→session→bootstrap→auth with the exact 
   const s = await ensureSession();
 
   assert.deepEqual(fetchCalls.map((c) => c.url.slice(API.length)),
-    ["/v2/client/challenge", "/v2/client/session", "/v2/client/bootstrap", "/v2/client/auth"]);
+    ["/v3/client/challenge", "/v3/client/session", "/v3/client/bootstrap", "/v3/client/auth"]);
 
   assert.equal(fetchCalls[0].body, '{"schemaVersion":1,"versionCode":90355}');
   assert.equal(fetchCalls[0].headers["X-MOVP-Hybrid-Signature"], undefined);
@@ -165,10 +165,10 @@ test("ensureSession: merges grants from bootstrap AND auth (each holds one the o
   const base = handshakeServer();
   fetchHandler = (c) => {
     const path = c.url.slice(API.length);
-    if (path === "/v2/client/bootstrap") {
+    if (path === "/v3/client/bootstrap") {
       return { body: { ...responses.bootstrap, admission: { ...responses.bootstrap.admission, grants: { bootstrap: "g-b", catalog: "g-cat" } } } };
     }
-    if (path === "/v2/client/auth") {
+    if (path === "/v3/client/auth") {
       return { body: { ...responses.auth, admission: { ...responses.auth.admission, grants: { "catalog-value": "g-val", "download-control": "g-dl" } } } };
     }
     return base(c);
@@ -212,8 +212,8 @@ test("ensureSession: fails clearly when the grants never arrive", async () => {
 
 test("call: ensureSession + signed request, returns the parsed response", async () => {
   fetchHandler = handshakeServer();
-  const r = await call("/v2/client/movie-variants", { id: 1 });
-  assert.deepEqual(r, { ok: true, echo: "/v2/client/movie-variants" });
+  const r = await call("/v3/client/movie-variants", { id: 1 });
+  assert.deepEqual(r, { ok: true, echo: "/v3/client/movie-variants" });
   const last = fetchCalls.at(-1);
   assert.equal(last.headers["X-MOVP-Hybrid-Session"], "tok-1");
   assert.equal(last.body, '{"id":1}');
@@ -223,17 +223,17 @@ test("call: on 401 re-does the handshake once and retries (ensureSession ran twi
   let rejected = 0;
   fetchHandler = handshakeServer({
     reject401: (c, path) => {
-      if (path === "/v2/client/movie-variants" && c.headers["X-MOVP-Hybrid-Session"] === "tok-1") { rejected++; return true; }
+      if (path === "/v3/client/movie-variants" && c.headers["X-MOVP-Hybrid-Session"] === "tok-1") { rejected++; return true; }
       return false;
     },
   });
-  const r = await call("/v2/client/movie-variants", { id: 7 });
+  const r = await call("/v3/client/movie-variants", { id: 7 });
 
   assert.equal(rejected, 1);
-  assert.deepEqual(r, { ok: true, echo: "/v2/client/movie-variants" });
-  const handshakes = fetchCalls.filter((c) => c.url.endsWith("/v2/client/challenge")).length;
+  assert.deepEqual(r, { ok: true, echo: "/v3/client/movie-variants" });
+  const handshakes = fetchCalls.filter((c) => c.url.endsWith("/v3/client/challenge")).length;
   assert.equal(handshakes, 2, "initial handshake + one re-session");
-  const calls = fetchCalls.filter((c) => c.url.endsWith("/v2/client/movie-variants"));
+  const calls = fetchCalls.filter((c) => c.url.endsWith("/v3/client/movie-variants"));
   assert.equal(calls.length, 2);
   assert.equal(calls[0].headers["X-MOVP-Hybrid-Session"], "tok-1");
   assert.equal(calls[1].headers["X-MOVP-Hybrid-Session"], "tok-2");
@@ -242,9 +242,9 @@ test("call: on 401 re-does the handshake once and retries (ensureSession ran twi
 });
 
 test("call: a second 401 is not retried again", async () => {
-  fetchHandler = handshakeServer({ reject401: (c, path) => path === "/v2/client/movie-variants" });
-  await assert.rejects(() => call("/v2/client/movie-variants", {}), (e) => e.status === 401);
-  assert.equal(fetchCalls.filter((c) => c.url.endsWith("/v2/client/movie-variants")).length, 2);
+  fetchHandler = handshakeServer({ reject401: (c, path) => path === "/v3/client/movie-variants" });
+  await assert.rejects(() => call("/v3/client/movie-variants", {}), (e) => e.status === 401);
+  assert.equal(fetchCalls.filter((c) => c.url.endsWith("/v3/client/movie-variants")).length, 2);
 });
 
 test("call: non-session errors (500) are not retried", async () => {

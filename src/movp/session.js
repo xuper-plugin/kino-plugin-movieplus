@@ -1,5 +1,5 @@
 // Anonymous signed session for api.appsxploit.dev: challenge → session (registers our RSA key) → bootstrap → auth guest.
-// Every /v2/client/* request after the session carries RSA-signed X-MOVP-* headers. Primitives come from ./crypto.js and
+// Every /v3/client/* request after the session carries RSA-signed X-MOVP-* headers. Primitives come from ./crypto.js and
 // kino.fetch / kino.storage are read from globalThis.kino at call time, so the module also runs under node --test.
 
 import { getIdentity, signPkcs1, sha256hex } from "./crypto.js";
@@ -23,9 +23,9 @@ function httpError(message, status, extra) {
   return err;
 }
 
-function parseBody(text) {
+function parseBody(resp) {
   try {
-    return JSON.parse(text);
+    return resp.json();
   } catch (_) {
     return null;
   }
@@ -37,12 +37,10 @@ async function post(path, bodyObj, headers) {
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(bodyObj),
   });
-  const text = resp.text ? resp.text() : null;
-  const data = text ? parseBody(text) : null;
+  const data = parseBody(resp);
   const reason = data && (data.error || data.code);
   const sessionInvalid = resp.status === 401 || (!!reason && typeof reason === "string" && SESSION_ERROR.test(reason));
   if (!resp.ok || (data && data.ok === false && sessionInvalid)) {
-    if (resp.status === 403) getKino().log("info", `[movp-debug] 403 raw(200): ${String(text).slice(0, 200)}`);
     throw httpError(`${path} failed (HTTP ${resp.status}${reason ? ", " + reason : ""})`, resp.status, { sessionInvalid });
   }
   return data === null ? {} : data;
@@ -78,13 +76,12 @@ function clearStored() {
 
 async function handshake() {
   const r = recipe();
-  getKino().log("info", `[movp-debug] challenge versionCode=${r.versionCode} appVersion=${r.appVersion}`);
   const id = getIdentity();
-  const challenge = await post("/v2/client/challenge", { schemaVersion: 1, versionCode: r.versionCode });
+  const challenge = await post("/v3/client/challenge", { schemaVersion: 1, versionCode: r.versionCode });
   const jwt = challenge.challenge;
   if (!jwt) throw getKino().error("unavailable", "Movie+ challenge missing");
 
-  const session = await post("/v2/client/session", {
+  const session = await post("/v3/client/session", {
     schemaVersion: 1,
     publicKeySpki: id.spkiB64,
     challenge: jwt,
@@ -95,7 +92,7 @@ async function handshake() {
   if (!token) throw getKino().error("unavailable", "Movie+ session token missing");
 
   const grants = {};
-  const bootstrap = await signedFetch("/v2/client/bootstrap", {
+  const bootstrap = await signedFetch("/v3/client/bootstrap", {
     schemaVersion: 1,
     deviceId: id.deviceId,
     channel: r.channel,
@@ -103,7 +100,7 @@ async function handshake() {
   }, token);
   Object.assign(grants, (bootstrap.admission && bootstrap.admission.grants) || bootstrap.grants || {});
 
-  const auth = await signedFetch("/v2/client/auth", {
+  const auth = await signedFetch("/v3/client/auth", {
     schemaVersion: 1,
     deviceId: id.deviceId,
     action: "guest",

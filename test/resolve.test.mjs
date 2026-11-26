@@ -87,7 +87,7 @@ test("movieStreams: movie-variants with the catalog grant, parsed into quality/s
   const streams = await movieStreams(15066);
 
   assert.equal(fetchCalls.length, 1);
-  assert.equal(path(), "/v2/client/movie-variants");
+  assert.equal(path(), "/v3/client/movie-variants");
   assert.deepEqual(sentBody(), { schemaVersion: 1, deviceId: DEVICE_ID, grantId: GRANTS.catalog, movieId: 15066 });
   assert.equal(streams.length, 2);
   assert.deepEqual(streams.map((s) => s.quality), ["CAST", "1080p DUAL"]);
@@ -118,7 +118,7 @@ test("movieStreams: no variants → not_found; malformed variants are skipped", 
 test("seriesDocument: document request shape (collection tv, catalog grant, fresh uuid)", async () => {
   fetchHandler = () => ({ body: documentTv });
   await seriesDocument(52814);
-  assert.equal(path(), "/v2/client/document");
+  assert.equal(path(), "/v3/client/document");
   const b = sentBody();
   assert.equal(b.schemaVersion, 1);
   assert.equal(b.deviceId, DEVICE_ID);
@@ -202,7 +202,7 @@ test("resolveToken: playback with the catalog-value grant returns the direct Yan
   const url = await resolveToken("Movp2!::cv-x.a.b");
   const after = Date.now();
 
-  assert.equal(path(), "/v2/client/playback");
+  assert.equal(path(), "/v3/client/playback");
   const b = sentBody();
   assert.equal(b.schemaVersion, 1);
   assert.equal(b.deviceId, DEVICE_ID);

@@ -39,7 +39,7 @@ export async function movieStreams(movieId) {
   if (!Number.isSafeInteger(id) || id < 1) throw fail("invalid_request", `bad movie id: ${movieId}`);
 
   const s = await ensureSession();
-  const resp = await call("/v2/client/movie-variants", {
+  const resp = await call("/v3/client/movie-variants", {
     schemaVersion: SCHEMA_VERSION,
     deviceId: s.deviceId,
     grantId: grant(s, "catalog"),
@@ -88,7 +88,7 @@ export async function seriesDocument(seriesId) {
   if (!SERIES_ID.test(docId)) throw fail("invalid_request", `bad series id: ${seriesId}`);
 
   const s = await ensureSession();
-  const resp = await call("/v2/client/document", {
+  const resp = await call("/v3/client/document", {
     schemaVersion: SCHEMA_VERSION,
     deviceId: s.deviceId,
     grantId: grant(s, "catalog"),
@@ -151,7 +151,7 @@ export async function resolveToken(token, resolveProvider = true) {
   }
 
   const s = await ensureSession();
-  const resp = await call("/v2/client/playback", {
+  const resp = await call("/v3/client/playback", {
     schemaVersion: SCHEMA_VERSION,
     deviceId: s.deviceId,
     grantId: grant(s, "catalog-value"),
