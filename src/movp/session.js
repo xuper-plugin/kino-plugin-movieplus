@@ -41,6 +41,7 @@ async function post(path, bodyObj, headers) {
   const reason = data && (data.error || data.code);
   const sessionInvalid = resp.status === 401 || (!!reason && typeof reason === "string" && SESSION_ERROR.test(reason));
   if (!resp.ok || (data && data.ok === false && sessionInvalid)) {
+    if (resp.status === 403) getKino().log("info", `[movp-debug] 403 body: ${JSON.stringify(data)}`);
     throw httpError(`${path} failed (HTTP ${resp.status}${reason ? ", " + reason : ""})`, resp.status, { sessionInvalid });
   }
   return data === null ? {} : data;
@@ -76,6 +77,7 @@ function clearStored() {
 
 async function handshake() {
   const r = recipe();
+  getKino().log("info", `[movp-debug] challenge versionCode=${r.versionCode} appVersion=${r.appVersion}`);
   const id = getIdentity();
   const challenge = await post("/v2/client/challenge", { schemaVersion: 1, versionCode: r.versionCode });
   const jwt = challenge.challenge;
